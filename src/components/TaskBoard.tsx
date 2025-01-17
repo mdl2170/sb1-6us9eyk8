@@ -7,6 +7,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  DragEndEvent,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -56,7 +57,7 @@ function TaskMenu({ onEdit, onAddSubtask, onDuplicate, onDelete, onClose }: Task
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
-
+  
   return (
     <div
       ref={menuRef}
@@ -148,20 +149,18 @@ function TaskRow({
   const handleMenuClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (menuButtonRef.current) {
       const rect = menuButtonRef.current.getBoundingClientRect();
-      const scrollY = window.scrollY;
-      const scrollX = window.scrollX;
-      
-      // Calculate position to show menu below the button
-      const top = rect.bottom + scrollY;
-      const left = Math.max(0, rect.left + scrollX - 120); // Offset to align better
-      
+
+      // Use viewport-relative positioning
+      const top = rect.bottom;
+      const left = Math.max(0, rect.left - 160); // Offset to align better
+
       document.documentElement.style.setProperty('--menu-top', `${top}px`);
       document.documentElement.style.setProperty('--menu-left', `${left}px`);
     }
-    
+
     setShowMenu(!showMenu);
   };
 
@@ -465,8 +464,8 @@ export function TaskBoard({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  const handleDragEnd = (event: any) => {
+  
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (!over || active.id === over.id) {
@@ -475,7 +474,7 @@ export function TaskBoard({
 
     const oldIndex = tasks.findIndex((task) => task.id === active.id);
     const newIndex = tasks.findIndex((task) => task.id === over.id);
-
+    
     if (oldIndex === -1 || newIndex === -1) {
       return;
     }
@@ -483,79 +482,65 @@ export function TaskBoard({
     const movedTask = tasks[oldIndex];
     const newTasks = arrayMove(tasks, oldIndex, newIndex);
 
-    // Find the group for the moved task
-    const group = groups.find(g => g.id === movedTask.groupId);
-    if (!group) {
-      console.error('Group not found');
-      onTasksReorder(tasks); // Revert on error
-      return;
-    }
-
-    const baseOrder = 10000 * group.order;
-    let newOrder: number;
-
+    // Update the local state immediately for better UX
+    let updatedTasks = [...newTasks];
+    
+    // Calculate new order values
     if (newIndex === 0) {
       // Moving to start
-      const nextOrder = newTasks[1]?.order % 10000 || 10000;
-      newOrder = Math.max(1, Math.floor(nextOrder / 2));
+      const nextOrder = updatedTasks[1]?.order || 1000;
+      updatedTasks[0] = { ...movedTask, order: Math.max(1, Math.floor(nextOrder / 2)) };
     } else if (newIndex === tasks.length - 1) {
       // Moving to end
-      const prevOrder = newTasks[newIndex - 1].order % 10000;
-      newOrder = prevOrder + 1000;
+      const prevOrder = updatedTasks[newIndex - 1].order;
+      updatedTasks[newIndex] = { ...movedTask, order: prevOrder + 1000 };
     } else {
       // Moving between tasks
-      const prevOrder = newTasks[newIndex - 1].order % 10000;
-      const nextOrder = newTasks[newIndex + 1].order % 10000;
-      newOrder = Math.floor((prevOrder + nextOrder) / 2);
+      const prevOrder = updatedTasks[newIndex - 1].order;
+      const nextOrder = updatedTasks[newIndex + 1].order;
+      updatedTasks[newIndex] = { ...movedTask, order: Math.floor((prevOrder + nextOrder) / 2) };
     }
 
-    // Update the local state immediately for better UX
-    const updatedTasks = newTasks.map(task => 
-      task.id === movedTask.id 
-        ? { ...task, order: baseOrder + newOrder }
-        : task
-    );
-    
     onTasksReorder(updatedTasks);
 
     // Update the database asynchronously
-    updateTaskOrder(movedTask.id, newOrder, movedTask.groupId).catch(error => {
+    updateTaskOrder(movedTask.id, updatedTasks[newIndex].order, movedTask.groupId)
+    .catch(error => {
       console.error('Error updating task order:', error);
       onTasksReorder(tasks); // Revert on error
     });
   };
-
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[40%]">
-              Task
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-              Status
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-              Priority
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-              Due Date
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-              Created
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-              Assignee
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[40%]">
+                Task
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                Status
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                Priority
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                Due Date
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                Created
+              </th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
+                Assignee
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
             <SortableContext
               items={tasks.map((task) => task.id)}
               strategy={verticalListSortingStrategy}
@@ -575,9 +560,9 @@ export function TaskBoard({
                 />
               ))}
             </SortableContext>
-          </DndContext>
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </DndContext>
     </div>
   );
 }

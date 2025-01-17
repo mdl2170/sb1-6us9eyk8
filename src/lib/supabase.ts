@@ -309,13 +309,10 @@ export async function updateTaskOrder(taskId: string, newOrder: number, groupId:
 
     if (!group) throw new Error('Group not found');
 
-    // Calculate the final order by combining group order and task order
-    const finalOrder = (10000 * group.order) + (newOrder % 10000);
-
     // Update the moved task's order
     const { error } = await supabase
       .from('tasks')
-      .update({ order: finalOrder })
+      .update({ order: newOrder })
       .eq('id', taskId);
 
     if (error) throw error;

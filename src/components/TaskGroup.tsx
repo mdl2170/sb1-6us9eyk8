@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Edit, Trash2, GripVertical, Plus, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { MoreVertical, Edit, Trash2, GripVertical, Plus, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { TaskBoard } from './TaskBoard';
@@ -85,6 +85,7 @@ export function TaskGroup({
   onAddTask,
 }: TaskGroupProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [title, setTitle] = useState(group.title);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -148,7 +149,17 @@ export function TaskGroup({
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center">
           <div className="flex items-center flex-1 min-w-0 space-x-6">
-            <div className="flex items-center space-x-4 shrink-0">
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="h-5 w-5" />
+                ) : (
+                  <ChevronRight className="h-5 w-5" />
+                )}
+              </button>
               <div
                 {...listeners}
                 className={`cursor-grab hover:text-gray-600 ${isDragging ? 'cursor-grabbing' : ''}`}
@@ -220,21 +231,22 @@ export function TaskGroup({
           </div>
         </div>
       </div>
-      
-      <div>
-        <TaskBoard
-          groups={[group]}
-          tasks={groupTasks}
-          onTaskUpdate={onTaskUpdate}
-          onTaskMove={onTaskMove}
-          onTaskDelete={onTaskDelete}
-          onTaskDuplicate={onTaskDuplicate}
-          onTaskEdit={onTaskEdit}
-          onTasksReorder={onTasksReorder}
-          onAddSubtask={onAddSubtask}
-          onToggleSubtask={onToggleSubtask}
-        />
-      </div>
+      {isExpanded && (
+        <div>
+          <TaskBoard
+            groups={[group]}
+            tasks={groupTasks}
+            onTaskUpdate={onTaskUpdate}
+            onTaskMove={onTaskMove}
+            onTaskDelete={onTaskDelete}
+            onTaskDuplicate={onTaskDuplicate}
+            onTaskEdit={onTaskEdit}
+            onTasksReorder={onTasksReorder}
+            onAddSubtask={onAddSubtask}
+            onToggleSubtask={onToggleSubtask}
+          />
+        </div>
+      )}
     </div>
   );
 }
