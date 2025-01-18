@@ -8,6 +8,14 @@ import { EditUserModal } from '../components/EditUserModal';
 import { ImportUsersModal } from '../components/ImportUsersModal';
 import { BulkActionModal } from '../components/BulkActionModal';
 
+function formatDate(dateString: string): string {
+  // Extract date parts directly from the string
+  const [datePart] = dateString.split('T');
+  const [year, month, day] = datePart.split('-');
+  
+  return `${month}/${day}/${year}`;
+}
+
 export function UserManagement() {
   const { addToast } = useToastStore();
   const [users, setUsers] = useState<Profile[]>([]);
@@ -546,7 +554,7 @@ export function UserManagement() {
                       </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(user.created_at).toLocaleDateString()}
+                      {formatDate(user.created_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">

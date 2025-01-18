@@ -116,7 +116,9 @@ export function ProgressOverview({ tasks }: ProgressOverviewProps) {
                           {task.title}
                         </div>
                         <div className="text-sm text-gray-500">
-                          Due: {new Date(task.due_date!).toLocaleDateString()}
+                                                                        Due: {new Date(task.due_date!).toLocaleDateString()}
+
+
                         </div>
                       </button>
                     ))}

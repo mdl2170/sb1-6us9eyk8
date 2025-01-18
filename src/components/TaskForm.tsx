@@ -34,8 +34,8 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
       setDescription(initialData.description || '');
       if (initialData.due_date) {
         const date = new Date(initialData.due_date);
-        const formattedDate = date.toISOString().split('T')[0];
-        setDueDate(formattedDate);
+                
+        setDueDate(initialData.due_date.split('T')[0]); 
       }
       setPriority(initialData.priority);
       setGroupId(initialData.groupId);
@@ -46,10 +46,11 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
     onSubmit({
       title,
       description,
-      due_date: dueDate,
+      due_date: dueDate || undefined,
       priority,
       groupId,
       status: initialData?.status || 'pending',

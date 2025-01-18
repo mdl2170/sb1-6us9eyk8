@@ -6,6 +6,14 @@ import type { Profile } from '../types';
 import { EditStudentModal } from '../components/EditStudentModal';
 import { BulkActionModal } from '../components/BulkActionModal';
 
+function formatDate(dateString: string): string {
+  // Extract date parts directly from the string
+  const [datePart] = dateString.split('T');
+  const [year, month, day] = datePart.split('-');
+  
+  return `${month}/${day}/${year}`;
+}
+
 interface StudentProfile extends Profile {
   cohort?: string;
   enrollment_date: string;
@@ -302,7 +310,7 @@ export function StudentManagement() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{student.cohort}</div>
                       <div className="text-sm text-gray-500">
-                        Enrolled: {new Date(student.enrollment_date).toLocaleDateString()}
+                        Enrolled: {formatDate(student.enrollment_date)}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

@@ -19,7 +19,6 @@ src/App.tsx
 
 src/context/*
 src/hooks/*
-src/lib/*
 src/stores/*
 src/types/*
 

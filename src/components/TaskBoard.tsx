@@ -44,6 +44,14 @@ interface TaskMenuProps {
   onClose: () => void;
 }
 
+function formatDate(dateString: string): string {
+  // Extract date parts directly from the string
+  const [datePart] = dateString.split('T');
+  const [year, month, day] = datePart.split('-');
+  
+  return `${month}/${day}/${year}`;
+}
+
 function TaskMenu({ onEdit, onAddSubtask, onDuplicate, onDelete, onClose }: TaskMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +171,7 @@ function TaskRow({
 
     setShowMenu(!showMenu);
   };
-
+  
   return (
     <>
       <tr 
@@ -265,22 +273,17 @@ function TaskRow({
           {task.due_date && (
             <div className="flex items-center">
               <Calendar className="h-4 w-4 mr-1" />
-              {new Date(task.due_date).toLocaleDateString('en-US', {
-                month: '2-digit',
-                day: '2-digit',
-                year: 'numeric'
-              })}
+                {formatDate(task.due_date)}
+
             </div>
           )}
         </td>
         <td className="px-6 py-4 w-[12%]">
           <div className="flex items-center">
             <Clock className="h-4 w-4 mr-1" />
-            {new Date(task.created_at).toLocaleDateString('en-US', {
-              month: '2-digit',
-              day: '2-digit',
-              year: 'numeric'
-            })}
+                {formatDate(task.created_at)}
+
+                
           </div>
         </td>
         <td className="px-6 py-4 w-[12%]">
@@ -479,36 +482,25 @@ export function TaskBoard({
       return;
     }
 
-    const movedTask = tasks[oldIndex];
-    const newTasks = arrayMove(tasks, oldIndex, newIndex);
-
-    // Update the local state immediately for better UX
-    let updatedTasks = [...newTasks];
+    // Create a new array with the moved task
+    const newTasks = arrayMove([...tasks], oldIndex, newIndex);
     
-    // Calculate new order values
-    if (newIndex === 0) {
-      // Moving to start
-      const nextOrder = updatedTasks[1]?.order || 1000;
-      updatedTasks[0] = { ...movedTask, order: Math.max(1, Math.floor(nextOrder / 2)) };
-    } else if (newIndex === tasks.length - 1) {
-      // Moving to end
-      const prevOrder = updatedTasks[newIndex - 1].order;
-      updatedTasks[newIndex] = { ...movedTask, order: prevOrder + 1000 };
-    } else {
-      // Moving between tasks
-      const prevOrder = updatedTasks[newIndex - 1].order;
-      const nextOrder = updatedTasks[newIndex + 1].order;
-      updatedTasks[newIndex] = { ...movedTask, order: Math.floor((prevOrder + nextOrder) / 2) };
-    }
+    // Calculate new order values for ALL tasks in the group
+    const updatedTasks = newTasks.map((task, index) => {
+      // Use a base order value of 1000 with increments of 1000
+      const newOrder = (index + 1) * 1000;
+      return { ...task, order: newOrder };
+    });
 
+    // Update local state
     onTasksReorder(updatedTasks);
 
-    // Update the database asynchronously
-    updateTaskOrder(movedTask.id, updatedTasks[newIndex].order, movedTask.groupId)
-    .catch(error => {
-      console.error('Error updating task order:', error);
-      onTasksReorder(tasks); // Revert on error
-    });
+    // Update the database
+    updateTaskOrder(active.id as string, updatedTasks[newIndex].order, updatedTasks[newIndex].groupId)
+      .catch(error => {
+        console.error('Error updating task order:', error);
+        onTasksReorder(tasks); // Revert on error
+      });
   };
   return (
     <div className="overflow-x-auto">

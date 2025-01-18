@@ -8,6 +8,25 @@ const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
+async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError;
+  for (let i = 0; i < MAX_RETRIES; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (i < MAX_RETRIES - 1) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // Task Groups
 export async function fetchTaskGroups(): Promise<TaskGroup[]> {
   const { data, error } = await supabase
@@ -188,6 +207,20 @@ export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated
 
   if (error) throw error;
 
+  // Schedule reminders if task has due date and assignee
+  if (data.due_date && data.assignee) {
+    const { error: reminderError } = await supabase
+      .rpc('schedule_task_reminders', {
+        task_id: data.id,
+        due_date: data.due_date,
+        assignee: data.assignee
+      });
+
+    if (reminderError) {
+      console.error('Failed to schedule reminders:', reminderError);
+    }
+  }
+
   return {
     ...data,
     groupId: data.group_id,
@@ -290,12 +323,38 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<vo
     dbUpdates.due_date = null;
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('tasks')
     .update(dbUpdates)
-    .eq('id', id);
+    .eq('id', id)
+    .select()
+    .single();
 
   if (error) throw error;
+
+  // If due date or assignee was updated, reschedule reminders
+  if (updates.due_date || updates.assignee) {
+    // Delete existing unset reminders
+    await supabase
+      .from('task_reminders')
+      .delete()
+      .eq('task_id', id)
+      .is('sent_at', null);
+
+    // Schedule new reminders if task has due date and assignee
+    if (data.due_date && data.assignee) {
+      const { error: reminderError } = await supabase
+        .rpc('schedule_task_reminders', {
+          task_id: data.id,
+          due_date: data.due_date,
+          assignee: data.assignee
+        });
+
+      if (reminderError) {
+        console.error('Failed to schedule reminders:', reminderError);
+      }
+    }
+  }
 }
 
 export async function updateTaskOrder(taskId: string, newOrder: number, groupId: string): Promise<void> {
@@ -382,7 +441,7 @@ export async function deleteTask(id: string, includeSubtasks: boolean = true): P
 }
 
 // Task Resources
-export async function createTaskResource(resource: Omit<TaskResource, 'id'>): Promise<TaskResource> {
+export async function createTaskResource(resource: Omit<TaskResource, 'id'>, taskId: string): Promise<Task> {
   const { data, error } = await supabase
     .from('task_resources')
     .insert([resource])
@@ -390,11 +449,38 @@ export async function createTaskResource(resource: Omit<TaskResource, 'id'>): Pr
     .single();
 
   if (error) throw error;
-  return data;
+
+  // Fetch the updated task with its resources
+  const { data: task, error: taskError } = await supabase
+    .from('tasks')
+    .select(`
+      *,
+      resources:task_resources(*)
+    `)
+    .eq('id', taskId)
+    .single();
+
+  if (taskError) throw taskError;
+
+  return {
+    ...task,
+    groupId: task.group_id,
+    resources: task.resources || [],
+    subtasks: [],
+    tags: Array.isArray(task.tags) ? task.tags : [],
+  };
 }
 
-export async function uploadTaskFile(file: File, taskId: string): Promise<string> {
+export async function uploadTaskFile(file: File, taskId: string, userId?: string): Promise<string> {
+  if (!file || !file.name) {
+    throw new Error('Invalid file provided');
+  }
+
   const fileExt = file.name.split('.').pop();
+  if (!fileExt) {
+    throw new Error('Could not determine file extension');
+  }
+
   const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
   const filePath = `tasks/${taskId}/${fileName}`;
 
@@ -408,25 +494,39 @@ export async function uploadTaskFile(file: File, taskId: string): Promise<string
     .from('task-resources')
     .getPublicUrl(filePath);
 
-  await createTaskResource({
+  return await createTaskResource({
     task_id: taskId,
     name: file.name,
     type: 'file',
     url: publicUrl,
     size: file.size,
     uploaded_at: new Date().toISOString(),
-    uploaded_by: 'current_user',
-  });
-
-  return publicUrl;
+    uploaded_by: userId,
+  }, taskId);
 }
 
 export async function deleteTaskFile(url: string): Promise<void> {
-  if (!url) return;
+  if (!url) throw new Error('No URL provided for file deletion');
+
+  // Skip deletion for external URLs
+  if (!url.includes(supabaseUrl)) {
+    return;
+  }
 
   try {
-    const path = url.split('/task-resources/')[1];
-    if (!path) return;
+    // Extract the path from the Supabase storage URL
+    const storageUrl = new URL(url);
+    const pathParts = storageUrl.pathname.split('/');
+    const bucketIndex = pathParts.findIndex(part => part === 'task-resources');
+    
+    if (bucketIndex === -1) {
+      throw new Error('Not a task resource file');
+    }
+    
+    const path = pathParts.slice(bucketIndex + 1).join('/');
+    if (!path) {
+      throw new Error('Invalid file path');
+    }
 
     const { error } = await supabase.storage
       .from('task-resources')
@@ -434,63 +534,105 @@ export async function deleteTaskFile(url: string): Promise<void> {
 
     if (error) throw error;
   } catch (error) {
-    console.error('Error deleting file:', error);
+    // If it's a URL parsing error, just log it and continue
+    if (error instanceof TypeError && error.message.includes('Invalid URL')) {
+      console.warn('Invalid URL format, skipping file deletion:', url);
+      return;
+    }
     throw error;
   }
 }
 
 export async function deleteTaskResource(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('task_resources')
-    .delete()
-    .eq('id', id);
+  try {
+    // First get the resource to check if it exists and get its URL
+    const { data: resource, error: fetchError } = await withRetry(() =>
+      supabase
+        .from('task_resources')
+        .select('*')
+        .eq('id', id)
+        .single()
+    );
 
-  if (error) throw error;
+    if (fetchError) throw fetchError;
+    if (!resource) throw new Error('Resource not found');
+
+    // If it's a file resource, delete from storage first
+    if (resource.type === 'file') {
+      try {
+        await withRetry(() => deleteTaskFile(resource.url));
+      } catch (error) {
+        console.error('Error deleting file from storage:', error);
+        throw error; // Propagate the error instead of continuing
+      }
+    }
+
+    // Delete the resource record
+    const { error } = await withRetry(() =>
+      supabase
+        .from('task_resources')
+        .delete()
+        .eq('id', id)
+    );
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting resource:', error);
+    throw error;
+  }
 }
 
 // Profile functions
 export async function fetchProfile(userId: string) {
   try {
     // First get the base profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    const { data: profile, error: profileError } = await withRetry(() =>
+      supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+    );
 
     if (profileError) throw profileError;
 
     // Based on role, fetch additional details
     if (profile.role === 'student') {
-      const { data: student, error: studentError } = await supabaseAdmin
-        .from('students')
-        .select(`
-          *,
-          coach:coach_id(id, full_name, email),
-          mentor:mentor_id(id, full_name, email)
-        `)
-        .eq('id', userId)
-        .single();
+      const { data: student, error: studentError } = await withRetry(() =>
+        supabaseAdmin
+          .from('students')
+          .select(`
+            *,
+            coach:coach_id(id, full_name, email),
+            mentor:mentor_id(id, full_name, email)
+          `)
+          .eq('id', userId)
+          .single()
+      );
 
       if (studentError) throw studentError;
       return { ...profile, ...student };
 
     } else if (profile.role === 'coach') {
-      const { data: coach, error: coachError } = await supabaseAdmin
-        .from('coaches')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const { data: coach, error: coachError } = await withRetry(() =>
+        supabaseAdmin
+          .from('coaches')
+          .select('*')
+          .eq('id', userId)
+          .single()
+      );
 
       if (coachError) throw coachError;
       return { ...profile, ...coach };
 
     } else if (profile.role === 'mentor') {
-      const { data: mentor, error: mentorError } = await supabaseAdmin
-        .from('mentors')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const { data: mentor, error: mentorError } = await withRetry(() =>
+        supabaseAdmin
+          .from('mentors')
+          .select('*')
+          .eq('id', userId)
+          .single()
+      );
 
       if (mentorError) throw mentorError;
       return { ...profile, ...mentor };
