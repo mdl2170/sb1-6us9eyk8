@@ -44,12 +44,23 @@ interface TaskMenuProps {
   onClose: () => void;
 }
 
-function formatDate(dateString: string): string {
-  // Extract date parts directly from the string
+function formatDate(dateString: string, isOverdue?: boolean): JSX.Element {
   const [datePart] = dateString.split('T');
   const [year, month, day] = datePart.split('-');
   
-  return `${month}/${day}/${year}`;
+  return (
+    <span className={`${isOverdue ? 'text-red-600 font-medium' : ''}`}>
+      {`${month}/${day}/${year}`}
+    </span>
+  );
+}
+
+function isTaskOverdue(task: Task): boolean {
+  if (!task.due_date || task.status === 'completed') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(task.due_date);
+  return dueDate < today;
 }
 
 function TaskMenu({ onEdit, onAddSubtask, onDuplicate, onDelete, onClose }: TaskMenuProps) {
@@ -271,10 +282,9 @@ function TaskRow({
         </td>
         <td className="px-6 py-4 w-[12%]">
           {task.due_date && (
-            <div className="flex items-center">
-              <Calendar className="h-4 w-4 mr-1" />
-                {formatDate(task.due_date)}
-
+            <div className={`flex items-center ${isTaskOverdue(task) ? 'text-red-600' : ''}`}>
+              <Calendar className={`h-4 w-4 mr-1 ${isTaskOverdue(task) ? 'text-red-600' : ''}`} />
+              {formatDate(task.due_date, isTaskOverdue(task))}
             </div>
           )}
         </td>
