@@ -17,16 +17,15 @@ src/vite-env.d.ts
 src/App.tsx
 
 
-src/context/*
 src/hooks/*
 src/stores/*
 src/types/*
 
 
-src/pages/ForgotPassword.tsx
-src/pages/ResetPassword.tsx
 src/pages/Login.tsx
 src/pages/SignUp.tsx
+src/pages/ForgotPassword.tsx
+
 src/pages/UserManagement.tsx
 src/pages/StudentManagement.tsx
 src/pages/Dashboard.tsx
@@ -42,6 +41,15 @@ src/components/PasswordStrengthIndicator.tsx
 src/components/ProtectedRoute.tsx
 src/components/ToastContainer.tsx
 src/components/Toast.tsx
+
+
+src/components/ProgressOverview.tsx
+src/components/TaskForm.tsx
+src/components/TaskBoard.tsx
+src/components/TaskGroup.tsx
+src/components/TaskList.tsx
+src/components/TaskPanel.tsx
+src/components/SubtaskForm.tsx
 
 
 src/components/NotificationBell.tsx

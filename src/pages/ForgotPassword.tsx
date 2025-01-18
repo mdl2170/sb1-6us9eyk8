@@ -20,7 +20,12 @@ export function ForgotPassword() {
         redirectTo: `${window.location.origin}/reset-password`,
       });
 
-      if (error) throw error;
+      if (error) {
+        // More specific error message based on the error
+        const errorMessage = error.message || 'Failed to send reset password email';
+        addToast(errorMessage, 'error');
+        return;
+      }
 
       setIsSubmitted(true);
       addToast('Password reset link sent to your email', 'success');
