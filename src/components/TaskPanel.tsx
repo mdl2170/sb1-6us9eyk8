@@ -1,9 +1,17 @@
-import React, { useState } from 'react';
-import { X, Calendar, Clock, Tag, User, Paperclip, Send, AtSign, Link, Upload, Trash2, Download } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Calendar, Clock, Tag, User, Paperclip, Send, AtSign, Link, Upload, Trash2 } from 'lucide-react';
 import { Task } from '../types';
 import { USERS } from '../constants';
-import { uploadTaskFile, createTaskResource, deleteTaskResource, deleteTaskFile, fetchTasks } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { 
+  createTaskResource, 
+  uploadTaskFile, 
+  deleteTaskResource, 
+  deleteTaskFile,
+  fetchTaskUpdates,
+  createTaskUpdate,
+  deleteTaskUpdate
+} from '../lib/supabase';
 import { useToastStore } from '../stores/useToastStore';
 
 interface TaskPanelProps {
@@ -13,54 +21,163 @@ interface TaskPanelProps {
   onTaskUpdate: (taskId: string, updates: Partial<Task>) => void;
 }
 
-interface Update {
+interface TaskUpdate {
   id: string;
   content: string;
   created_at: string;
-  user: {
-    name: string;
-    avatar?: string;
-  };
+  created_by: {
+    id: string;
+    full_name: string;
+    avatar_url?: string;
+  }
   mentions?: string[];
 }
 
-// Temporary mock data for updates
-const mockUpdates: Update[] = [
-  {
-    id: '1',
-    content: "Started working on the frontend implementation",
-    created_at: "2024-01-17T10:00:00Z",
-    user: {
-      name: "Minh Le",
-      avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
-    }
-  },
-  {
-    id: '2',
-    content: "@Tony Duong Could you review the API integration?",
-    created_at: "2024-01-17T11:30:00Z",
-    user: {
-      name: "Linh Pham",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
-    },
-    mentions: ["Tony Duong"]
-  }
-];
-
 export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProps) {
   const [activeTab, setActiveTab] = useState('details');
-  const [updateContent, setUpdateContent] = useState('');
-  const [mentionSearch, setMentionSearch] = useState('');
-  const [showMentions, setShowMentions] = useState(false);
-  const [cursorPosition, setCursorPosition] = useState(0);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkName, setLinkName] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const { addToast } = useToastStore();
-  const { user } = useAuth();
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [updateContent, setUpdateContent] = useState('');
+  const [updates, setUpdates] = useState<TaskUpdate[]>([]);
+  const [mentionSearch, setMentionSearch] = useState('');
+  const [showMentions, setShowMentions] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isPostingUpdate, setIsPostingUpdate] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
+  const { addToast } = useToastStore();
+  
+  useEffect(() => {
+    if (activeTab === 'updates') {
+      loadUpdates();
+    }
+  }, [activeTab]);
+
+  const loadUpdates = async () => {
+    try {
+      const data = await fetchTaskUpdates(task.id);
+      if (!data) {
+        setUpdates([]);
+        return;
+      }
+      setUpdates(data);
+    } catch (error) {
+      console.error('Error loading updates:', error);
+      addToast('Failed to load updates', 'error');
+      setUpdates([]);
+    }
+  };
+
+  const handlePostUpdate = async () => {
+    if (!updateContent.trim() || !user) {
+      addToast('Please enter some content', 'error');
+      return;
+    }
+
+    try {
+      setIsPostingUpdate(true);
+      // Extract mentions from content
+      const mentions = updateContent.match(/@(\w+\s+\w+)/g)?.map(m => m.slice(1)) || [];
+      
+      await createTaskUpdate(task.id, updateContent, mentions);
+      setUpdateContent('');
+      await loadUpdates();
+      addToast('Update posted successfully', 'success');
+    } catch (error) {
+      console.error('Error posting update:', error);
+      addToast('Failed to post update. Please try again.', 'error');
+    } finally {
+      setIsPostingUpdate(false);
+    }
+  };
+
+  const handleDeleteUpdate = async (updateId: string) => {
+    try {
+      await deleteTaskUpdate(updateId);
+      await loadUpdates();
+      addToast('Update deleted successfully', 'success');
+    } catch (error) {
+      console.error('Error deleting update:', error);
+      addToast('Failed to delete update', 'error');
+    } finally {
+      setShowDeleteConfirm(null);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const resource = await uploadTaskFile(file, task.id);
+      const updatedResources = [...task.resources, resource];
+      onTaskUpdate(task.id, { resources: updatedResources });
+      addToast('File uploaded successfully', 'success');
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      addToast('Failed to upload file', 'error');
+    }
+  };
+
+  const handleLinkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!linkUrl.trim() || !linkName.trim()) return;
+    
+    try {
+      const result = await createTaskResource({
+        task_id: task.id,
+        name: linkName.trim(),
+        type: 'link',
+        url: linkUrl.trim(),
+        size: 0,
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: user?.id || null,
+      });
+
+      const updatedResources = [...task.resources, result];
+      onTaskUpdate(task.id, { resources: updatedResources });
+      
+      setLinkName('');
+      setLinkUrl('');
+      setShowLinkInput(false);
+      addToast('Link added successfully', 'success');
+    } catch (error) {
+      console.error('Error adding link:', error);
+      addToast('Failed to add link', 'error');
+    }
+  };
+
+  const handleResourceDelete = async (resourceId: string, url: string) => {
+    try {
+      await deleteTaskResource(resourceId);
+      if (url.includes('task-resources')) {
+        await deleteTaskFile(url);
+      }
+      
+      const updatedResources = task.resources.filter(r => r.id !== resourceId);
+      onTaskUpdate(task.id, { resources: updatedResources });
+      addToast('Resource deleted successfully', 'success');
+    } catch (error) {
+      console.error('Error deleting resource:', error);
+      addToast('Failed to delete resource', 'error');
+    }
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+  
   const handleMention = (user: typeof USERS[0]) => {
     const beforeMention = updateContent.slice(0, cursorPosition).replace(/@\w*$/, '');
     const afterMention = updateContent.slice(cursorPosition);
@@ -97,77 +214,10 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
       minute: '2-digit'
     });
   };
-
-  const handleFileUpload = async (file: File, setTask: React.Dispatch<React.SetStateAction<Task>>) => {
-    try {
-      const updatedTaskData = await uploadTaskFile(file, task.id, user?.id);
-      setTask(prevTask => ({
-        ...prevTask,
-        resources: updatedTaskData.resources || []
-      }));
-      addToast('File uploaded successfully', 'success');
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      addToast('Failed to upload file', 'error');
-    }
-  };
-
-  const handleLinkSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!linkUrl.trim() || !linkName.trim()) return;
-
-    try {
-      const result = await createTaskResource({
-        task_id: task.id,
-        name: linkName.trim(),
-        type: 'link',
-        url: linkUrl.trim(),
-        size: 0,
-        uploaded_at: new Date().toISOString(),
-        uploaded_by: user?.id,
-      }, task.id);
-
-      // Update task with the result that includes the new resource
-      if (onTaskUpdate) {
-        onTaskUpdate(task.id, result);
-      }
-      
-      setLinkName('');
-      setLinkUrl('');
-      setShowLinkInput(false);
-      addToast('Link added successfully', 'success');
-    } catch (error) {
-      console.error('Error adding link:', error);
-      addToast('Failed to add link', 'error');
-    }
-  };
-
-  const handleResourceDelete = async (resourceId: string, url: string) => {
-    try {
-      await deleteTaskFile(url);
-      await deleteTaskResource(resourceId);
-      
-      // Refresh tasks to get updated resources
-      const updatedTasks = await fetchTasks();
-      const updatedTask = updatedTasks.find(t => t.id === task.id);
-      
-      if (updatedTask) {
-        onTaskUpdate(task.id, updatedTask);
-      }
-
-      // Update the task's resources locally
-      const updatedResources = task.resources.filter(r => r.id !== resourceId);
-      onTaskUpdate(task.id, { ...task, resources: updatedResources });
-      addToast('Resource deleted successfully', 'success');
-    } catch (error) {
-      console.error('Error deleting resource:', error);
-      addToast('Failed to delete resource', 'error');
-    }
-  };
-
+        
   return (
-    <div className={`fixed inset-y-0 right-0 w-96 bg-white shadow-xl transform transition-transform ease-in-out duration-300 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-      <div className="h-full flex flex-col">
+     <div className="fixed inset-0 bg-black bg-opacity-30 z-50 flex justify-end">
+      <div ref={panelRef}  className="fixed w-1/3 bg-white max-w-2xl h-full overflow-y-auto shadow-xl">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
@@ -289,60 +339,73 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
 
               {/* Resources */}
               <div>
-                <h3 className="text-sm font-medium text-gray-500">Resources</h3>
-                <div className="mt-2 flex space-x-2">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-sm font-medium text-gray-500">Resources</h3>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center px-2 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      <Upload className="h-4 w-4 mr-1" />
+                      Upload File
+                    </button>
+                    <button
+                      onClick={() => setShowLinkInput(true)}
+                      className="inline-flex items-center px-2 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      <Link className="h-4 w-4 mr-1" />
+                      Add Link
+                    </button>
+                  </div>
                   <input
-                    type="file"
                     ref={fileInputRef}
+                    type="file"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    <Upload className="h-4 w-4 mr-1.5" />
-                    Upload File
-                  </button>
-                  <button
-                    onClick={() => setShowLinkInput(true)}
-                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    <Link className="h-4 w-4 mr-1.5" />
-                    Add Link
-                  </button>
                 </div>
-
+                
                 {showLinkInput && (
-                  <form onSubmit={handleLinkSubmit} className="mt-3 space-y-3">
-                    <input
-                      type="text"
-                      value={linkName}
-                      onChange={(e) => setLinkName(e.target.value)}
-                      placeholder="Link name"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      required
-                    />
-                    <input
-                      type="url"
-                      value={linkUrl}
-                      onChange={(e) => setLinkUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      required
-                    />
+                  <form onSubmit={handleLinkSubmit} className="mb-4 space-y-3 bg-gray-50 p-3 rounded-md">
+                    <div>
+                      <label htmlFor="linkName" className="block text-sm font-medium text-gray-700">
+                        Link Name
+                      </label>
+                      <input
+                        type="text"
+                        id="linkName"
+                        value={linkName}
+                        onChange={(e) => setLinkName(e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        placeholder="Enter link name"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="linkUrl" className="block text-sm font-medium text-gray-700">
+                        URL
+                      </label>
+                      <input
+                        type="url"
+                        id="linkUrl"
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        placeholder="https://"
+                        required
+                      />
+                    </div>
                     <div className="flex justify-end space-x-2">
                       <button
                         type="button"
                         onClick={() => setShowLinkInput(false)}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                       >
                         Cancel
                       </button>
                       <button
                         type="submit"
-                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                        className="px-3 py-1 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700"
                       >
                         Add Link
                       </button>
@@ -355,24 +418,16 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
                     {task.resources.map((resource) => (
                       <li key={resource.id} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
                         <div className="w-0 flex-1 flex items-center">
-                          {resource.type === 'link' ? (
-                            <Link className="flex-shrink-0 h-5 w-5 text-gray-400" />
-                          ) : (
-                            <Paperclip className="flex-shrink-0 h-5 w-5 text-gray-400" />
-                          )}
+                          <Paperclip className="flex-shrink-0 h-5 w-5 text-gray-400" />
                           <span className="ml-2 flex-1 w-0 truncate">{resource.name}</span>
                         </div>
-                        <div className="ml-4 flex-shrink-0 flex items-center space-x-2">
+                        <div className="ml-4 flex-shrink-0 flex items-center space-x-4">
                           <a href={resource.url} className="font-medium text-indigo-600 hover:text-indigo-500">
-                            {resource.type === 'link' ? (
-                              <Link className="h-4 w-4" />
-                            ) : (
-                              <Download className="h-4 w-4" />
-                            )}
+                            {resource.type === 'link' ? 'Open Link' : 'Download'}
                           </a>
                           <button
                             onClick={() => handleResourceDelete(resource.id, resource.url)}
-                            className="text-red-600 hover:text-red-700"
+                            className="text-red-600 hover:text-red-800"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -389,32 +444,74 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
             <div className="flex flex-col h-full">
               {/* Updates List */}
               <div className="flex-1 p-6 space-y-6 overflow-y-auto">
-                {mockUpdates.map((update) => (
+                {updates.map((update) => (
                   <div key={update.id} className="flex space-x-3">
-                    <div className="flex-shrink-0">
-                      <img
-                        className="h-10 w-10 rounded-full"
-                        src={update.user.avatar}
-                        alt={update.user.name}
-                      />
+                    <div className="flex-1 flex">
+                      <div className="flex-shrink-0">
+                        {update.created_by.avatar_url ? (
+                          <img
+                            className="h-10 w-10 rounded-full"
+                            src={update.created_by.avatar_url}
+                            alt={update.created_by.full_name}
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <User className="h-6 w-6 text-indigo-600" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="ml-3 flex-1">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-900">{update.created_by.full_name}</span>
+                          </div>
+                          {user?.id === update.created_by.id && (
+                            <button
+                              onClick={() => setShowDeleteConfirm(update.id)}
+                              className="text-gray-400 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-700">
+                          {update.content.split(' ').map((word, i) => (
+                            word.startsWith('@') ? (
+                              <span key={i} className="text-indigo-600 font-medium">{word} </span>
+                            ) : (
+                              word + ' '
+                            )
+                          ))}
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          {formatDate(update.created_at)}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm">
-                        <span className="font-medium text-gray-900">{update.user.name}</span>
+                    {showDeleteConfirm === update.id && (
+                      <div className="fixed inset-0 bg-black bg-opacity-30 z-50 flex items-center justify-center">
+                        <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
+                          <h3 className="text-lg font-medium text-gray-900 mb-4">Delete Update?</h3>
+                          <p className="text-sm text-gray-500 mb-6">
+                            Are you sure you want to delete this update? This action cannot be undone.
+                          </p>
+                          <div className="flex justify-end space-x-3">
+                            <button
+                              onClick={() => setShowDeleteConfirm(null)}
+                              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUpdate(update.id)}
+                              className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-1 text-sm text-gray-700">
-                        {update.content.split(' ').map((word, i) => (
-                          word.startsWith('@') ? (
-                            <span key={i} className="text-indigo-600 font-medium">{word} </span>
-                          ) : (
-                            word + ' '
-                          )
-                        ))}
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500">
-                        {formatDate(update.created_at)}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -448,10 +545,12 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
                   <div className="mt-2 flex justify-between items-center">
                     <button
                       type="button"
+                      onClick={handlePostUpdate}
+                      disabled={!updateContent.trim() || isPostingUpdate}
                       className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       <Send className="h-4 w-4 mr-1" />
-                      Post Update
+                      {isPostingUpdate ? 'Posting...' : 'Post Update'}
                     </button>
                     <span className="text-xs text-gray-500">
                       Use @ to mention someone

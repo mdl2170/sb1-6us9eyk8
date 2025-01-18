@@ -8,25 +8,6 @@ const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-// Retry configuration
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
-
-async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
-  let lastError;
-  for (let i = 0; i < MAX_RETRIES; i++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (i < MAX_RETRIES - 1) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (i + 1)));
-      }
-    }
-  }
-  throw lastError;
-}
-
 // Task Groups
 export async function fetchTaskGroups(): Promise<TaskGroup[]> {
   const { data, error } = await supabase
@@ -441,7 +422,7 @@ export async function deleteTask(id: string, includeSubtasks: boolean = true): P
 }
 
 // Task Resources
-export async function createTaskResource(resource: Omit<TaskResource, 'id'>, taskId: string): Promise<Task> {
+export async function createTaskResource(resource: Omit<TaskResource, 'id'>): Promise<TaskResource> {
   const { data, error } = await supabase
     .from('task_resources')
     .insert([resource])
@@ -449,40 +430,17 @@ export async function createTaskResource(resource: Omit<TaskResource, 'id'>, tas
     .single();
 
   if (error) throw error;
-
-  // Fetch the updated task with its resources
-  const { data: task, error: taskError } = await supabase
-    .from('tasks')
-    .select(`
-      *,
-      resources:task_resources(*)
-    `)
-    .eq('id', taskId)
-    .single();
-
-  if (taskError) throw taskError;
-
-  return {
-    ...task,
-    groupId: task.group_id,
-    resources: task.resources || [],
-    subtasks: [],
-    tags: Array.isArray(task.tags) ? task.tags : [],
-  };
+  return data;
 }
 
-export async function uploadTaskFile(file: File, taskId: string, userId?: string): Promise<string> {
-  if (!file || !file.name) {
-    throw new Error('Invalid file provided');
-  }
-
+export async function uploadTaskFile(file: File, taskId: string): Promise<TaskResource> {
   const fileExt = file.name.split('.').pop();
-  if (!fileExt) {
-    throw new Error('Could not determine file extension');
-  }
-
   const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
   const filePath = `tasks/${taskId}/${fileName}`;
+
+  // Get the current user's ID first
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
 
   const { error: uploadError } = await supabase.storage
     .from('task-resources')
@@ -494,39 +452,31 @@ export async function uploadTaskFile(file: File, taskId: string, userId?: string
     .from('task-resources')
     .getPublicUrl(filePath);
 
-  return await createTaskResource({
-    task_id: taskId,
-    name: file.name,
-    type: 'file',
-    url: publicUrl,
-    size: file.size,
-    uploaded_at: new Date().toISOString(),
-    uploaded_by: userId,
-  }, taskId);
+  const { data: resource, error: resourceError } = await supabase
+    .from('task_resources')
+    .insert([{
+      task_id: taskId,
+      name: file.name,
+      type: 'file',
+      url: publicUrl,
+      size: file.size,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: user.id
+    }])
+    .select()
+    .single();
+
+  if (resourceError) throw resourceError;
+  return resource;
+
 }
 
 export async function deleteTaskFile(url: string): Promise<void> {
-  if (!url) throw new Error('No URL provided for file deletion');
-
-  // Skip deletion for external URLs
-  if (!url.includes(supabaseUrl)) {
-    return;
-  }
+  if (!url) return;
 
   try {
-    // Extract the path from the Supabase storage URL
-    const storageUrl = new URL(url);
-    const pathParts = storageUrl.pathname.split('/');
-    const bucketIndex = pathParts.findIndex(part => part === 'task-resources');
-    
-    if (bucketIndex === -1) {
-      throw new Error('Not a task resource file');
-    }
-    
-    const path = pathParts.slice(bucketIndex + 1).join('/');
-    if (!path) {
-      throw new Error('Invalid file path');
-    }
+    const path = url.split('/task-resources/')[1];
+    if (!path) return;
 
     const { error } = await supabase.storage
       .from('task-resources')
@@ -534,105 +484,63 @@ export async function deleteTaskFile(url: string): Promise<void> {
 
     if (error) throw error;
   } catch (error) {
-    // If it's a URL parsing error, just log it and continue
-    if (error instanceof TypeError && error.message.includes('Invalid URL')) {
-      console.warn('Invalid URL format, skipping file deletion:', url);
-      return;
-    }
+    console.error('Error deleting file:', error);
     throw error;
   }
 }
 
 export async function deleteTaskResource(id: string): Promise<void> {
-  try {
-    // First get the resource to check if it exists and get its URL
-    const { data: resource, error: fetchError } = await withRetry(() =>
-      supabase
-        .from('task_resources')
-        .select('*')
-        .eq('id', id)
-        .single()
-    );
+  const { error } = await supabase
+    .from('task_resources')
+    .delete()
+    .eq('id', id);
 
-    if (fetchError) throw fetchError;
-    if (!resource) throw new Error('Resource not found');
-
-    // If it's a file resource, delete from storage first
-    if (resource.type === 'file') {
-      try {
-        await withRetry(() => deleteTaskFile(resource.url));
-      } catch (error) {
-        console.error('Error deleting file from storage:', error);
-        throw error; // Propagate the error instead of continuing
-      }
-    }
-
-    // Delete the resource record
-    const { error } = await withRetry(() =>
-      supabase
-        .from('task_resources')
-        .delete()
-        .eq('id', id)
-    );
-
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error deleting resource:', error);
-    throw error;
-  }
+  if (error) throw error;
 }
 
 // Profile functions
 export async function fetchProfile(userId: string) {
   try {
     // First get the base profile
-    const { data: profile, error: profileError } = await withRetry(() =>
-      supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-    );
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
 
     if (profileError) throw profileError;
 
     // Based on role, fetch additional details
     if (profile.role === 'student') {
-      const { data: student, error: studentError } = await withRetry(() =>
-        supabaseAdmin
-          .from('students')
-          .select(`
-            *,
-            coach:coach_id(id, full_name, email),
-            mentor:mentor_id(id, full_name, email)
-          `)
-          .eq('id', userId)
-          .single()
-      );
+      const { data: student, error: studentError } = await supabaseAdmin
+        .from('students')
+        .select(`
+          *,
+          coach:coach_id(id, full_name, email),
+          mentor:mentor_id(id, full_name, email)
+        `)
+        .eq('id', userId)
+        .single();
 
       if (studentError) throw studentError;
       return { ...profile, ...student };
 
     } else if (profile.role === 'coach') {
-      const { data: coach, error: coachError } = await withRetry(() =>
-        supabaseAdmin
-          .from('coaches')
-          .select('*')
-          .eq('id', userId)
-          .single()
-      );
+      const { data: coach, error: coachError } = await supabaseAdmin
+        .from('coaches')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
       if (coachError) throw coachError;
       return { ...profile, ...coach };
 
     } else if (profile.role === 'mentor') {
-      const { data: mentor, error: mentorError } = await withRetry(() =>
-        supabaseAdmin
-          .from('mentors')
-          .select('*')
-          .eq('id', userId)
-          .single()
-      );
+      const { data: mentor, error: mentorError } = await supabaseAdmin
+        .from('mentors')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
       if (mentorError) throw mentorError;
       return { ...profile, ...mentor };
@@ -719,4 +627,52 @@ export async function createTaskNotification(
     type: 'task',
     link: `/progress?task=${taskId}`,
   });
+}
+
+// Task Updates
+export async function fetchTaskUpdates(taskId: string) {
+  const { data, error } = await supabase
+    .from('task_updates')
+    .select(`
+      *,
+      created_by:profiles!task_updates_created_by_fkey (
+        id,
+        full_name,
+        avatar_url
+      )
+    `)
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+export async function createTaskUpdate(
+  taskId: string,
+  content: string,
+  mentions: string[]
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
+  const { error } = await supabase
+    .from('task_updates')
+    .insert([{
+      task_id: taskId,
+      content,
+      mentions,
+      created_by: user.id
+    }]);
+
+  if (error) throw error;
+}
+
+export async function deleteTaskUpdate(updateId: string): Promise<void> {
+  const { error } = await supabase
+    .from('task_updates')
+    .delete()
+    .eq('id', updateId);
+
+  if (error) throw error;
 }

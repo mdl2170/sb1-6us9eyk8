@@ -428,6 +428,7 @@ function TaskRow({
             task={task}
             isOpen={showDetails}
             onClose={() => setShowDetails(false)}
+            onTaskUpdate={onTaskUpdate} 
           />,
           document.body
         )

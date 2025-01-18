@@ -43,8 +43,6 @@ src/components/ProtectedRoute.tsx
 src/components/ToastContainer.tsx
 src/components/Toast.tsx
 
-src/components/TaskPanel.tsx
-src/components/ProgressOverview.tsx
 
 src/components/NotificationBell.tsx
 src/components/NotificationPanel.tsx
