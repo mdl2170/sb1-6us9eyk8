@@ -105,12 +105,12 @@ BEGIN
   -- Update configuration
   INSERT INTO app_config (key, value, description)
   VALUES
-    ('smtp_host', smtp_host, 'SMTP server hostname'),
-    ('smtp_port', smtp_port::text, 'SMTP server port'),
-    ('smtp_user', smtp_user, 'SMTP username'),
-    ('smtp_password', smtp_password, 'SMTP password (encrypted)'),
-    ('sender_email', sender_email, 'Sender email address'),
-    ('sender_name', sender_name, 'Sender display name')
+    ('smtp_host', 'smtp.gmail.com', 'SMTP server hostname'),
+    ('smtp_port', '465', 'SMTP server port'),
+    ('smtp_user', 'minh.le@careerpassinstitute.com', 'SMTP username'),
+    ('smtp_password', 'ekfagnfzraklzrgs', 'SMTP password (encrypted)'),
+    ('sender_email', 'minh.le@careerpassinstute.com', 'Sender email address'),
+    ('sender_name', 'CPI Admin', 'Sender display name')
   ON CONFLICT (key) DO UPDATE
     SET value = EXCLUDED.value,
         updated_at = now();
