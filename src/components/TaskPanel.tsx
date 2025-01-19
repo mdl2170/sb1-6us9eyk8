@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Calendar, Clock, Tag, User, Paperclip, Send, AtSign, Link, Upload, Trash2 } from 'lucide-react';
+import { X, Calendar, Clock, Tag, User, Paperclip, Send, AtSign, Link, Upload, Trash2, Pencil, Save, Users } from 'lucide-react';
 import { Task } from '../types';
 import { USERS } from '../constants';
 import { useAuth } from '../hooks/useAuth';
@@ -296,14 +296,14 @@ export function TaskPanel({ task, isOpen, onClose, onTaskUpdate }: TaskPanelProp
                   <h3 className="text-sm font-medium text-gray-500">Due Date</h3>
                   <div className="mt-2 flex items-center text-sm text-gray-900">
                     <Calendar className="h-4 w-4 mr-1.5 text-gray-400" />
-                    {task.due_date ? formatDate(task.due_date) : 'No due date'}
+                    {task.due_date ? task.due_date.split('T')[0] : 'No due date'}
                   </div>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-gray-500">Created</h3>
                   <div className="mt-2 flex items-center text-sm text-gray-900">
                     <Clock className="h-4 w-4 mr-1.5 text-gray-400" />
-                    {formatDate(task.created_at)}
+                    {task.created_at.split('T')[0]}
                   </div>
                 </div>
               </div>

@@ -20,6 +20,7 @@ export interface TaskGroup {
 
 export interface BaseTask {
   id: string;
+  created_by: string;
   title: string;
   description?: string;
   status: Status;

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useToastStore } from '../stores/useToastStore';
+import { NotificationBell } from './NotificationBell';
 import {
   LayoutDashboard, 
   LineChart, 
@@ -61,6 +62,9 @@ export function Layout() {
               className="w-full pl-10 pr-4 py-1.5 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          </div>
+          <div className="mr-4">
+            <NotificationBell />
           </div>
           <div className="relative">
             <button

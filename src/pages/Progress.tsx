@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Upload } from 'lucide-react';
 import { DndContext, closestCenter, DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { supabase } from '../lib/supabase';
 import { arrayMove } from '@dnd-kit/sortable';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { duplicateTaskResources } from '../lib/supabase';
+import { SearchableSelect } from '../components/SearchableSelect';
+import { useAuth } from '../hooks/useAuth';
 import { TaskGroup } from '../components/TaskGroup';
 import { TaskForm } from '../components/TaskForm';
 import { ImportTaskModal } from '../components/ImportTaskModal';
@@ -24,6 +26,9 @@ import {
 } from '../lib/supabase';
 
 export function Progress() {
+  const { user } = useAuth();
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const [students, setStudents] = useState<{ id: string; full_name: string }[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroupType[]>([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -32,8 +37,108 @@ export function Progress() {
   const [searchQuery, setSearchQuery] = useState('');
   const { addToast } = useToastStore();
   
+  // Load students for staff members
+  useEffect(() => {
+    if (user?.role !== 'student') {
+      const loadStudents = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .eq('role', 'student')
+            .order('full_name');
+
+          if (error) throw error;
+          setStudents(data || []);
+        } catch (err) {
+          console.error('Error loading students:', err);
+          addToast('Failed to load students', 'error');
+        }
+      };
+
+      loadStudents();
+    }
+  }, [user]);
+
+  // Filter tasks based on role and selected student
+  const filteredTasks = useMemo(() => {
+    let filtered = tasks;
+
+    if (user?.role === 'student') {
+      filtered = tasks.filter(task => 
+        task.created_by === user.id || 
+        task.assignee === user.full_name
+      );
+    } else if (selectedStudent) {
+      const student = students.find(s => s.id === selectedStudent);
+      if (student) {
+        filtered = tasks.filter(task =>
+          task.created_by === selectedStudent ||
+          task.assignee === student.full_name
+        );
+      }
+    }
+
+    return filtered.filter(task =>
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [tasks, user, selectedStudent, students, searchQuery]);
+
+  // Get assignable users based on role
+  const getAssignableUsers = async () => {
+    try {
+      if (user?.role === 'student') {
+        // Get student's coach and mentor
+        const { data: studentData, error: studentError } = await supabase
+          .from('students')
+          .select(`
+            coach:coach_id(id, full_name),
+            mentor:mentor_id(id, full_name)
+          `)
+          .eq('id', user.id)
+          .single();
+
+        if (studentError) throw studentError;
+
+        const assignableUsers = [
+          { id: user.id, full_name: user.full_name }
+        ];
+
+        if (studentData.coach) {
+          assignableUsers.push(studentData.coach);
+        }
+        if (studentData.mentor) {
+          assignableUsers.push(studentData.mentor);
+        }
+
+        return assignableUsers;
+      } else {
+        // For staff, return all users
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .order('full_name');
+
+        if (error) throw error;
+        return data;
+      }
+    } catch (err) {
+      console.error('Error getting assignable users:', err);
+      addToast('Failed to get assignable users', 'error');
+      return [];
+    }
+  };
+
   const handleTaskCreate = async (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'subtasks' | 'resources'>) => {
     try {
+      // Add created_by field
+      const taskWithCreator = {
+        ...taskData,
+        created_by: user?.id
+      };
+
       const newTask = await createTask(taskData);
       setTasks(prevTasks => [newTask, ...prevTasks]);
       addToast('Task created successfully', 'success');
@@ -86,7 +191,9 @@ export function Progress() {
     try {
       const [tasksData, groupsData] = await Promise.all([
         fetchTasks(),
-        fetchTaskGroups(),
+        fetchTaskGroups(
+          user?.role === 'student' ? user.id : selectedStudent
+        ),
       ]);
       setTasks(tasksData);
       setGroups(groupsData);
@@ -95,13 +202,6 @@ export function Progress() {
       addToast('Failed to load data', 'error');
     }
   };
-
-  // Filter tasks based on search query
-  const filteredTasks = tasks.filter(task => 
-    task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
 
   const handleGroupCreate = async () => {
     try {
@@ -116,6 +216,7 @@ export function Progress() {
         title: 'New Group',
         color: '#' + Math.floor(Math.random()*16777215).toString(16),
         order: 0,
+        owner_id: user?.role === 'student' ? user.id : selectedStudent
       });
 
       // Update orders in database
@@ -359,8 +460,17 @@ export function Progress() {
   return (
     <div>
       <div className="mb-8">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-4">
           <h1 className="text-2xl font-semibold text-gray-900">Progress</h1>
+          {user?.role !== 'student' && (
+            <SearchableSelect
+              options={students.map(s => ({ value: s.id, label: s.full_name }))}
+              value={selectedStudent || ''}
+              onChange={setSelectedStudent}
+              placeholder="Select student..."
+              className="w-64"
+            />
+          )}
           <div className="flex items-center space-x-4">
             <div className="relative">
               <input
@@ -430,8 +540,8 @@ export function Progress() {
               onGroupUpdate={handleGroupUpdate}
               onAddTask={() => setShowTaskForm(true)}
             />
-          ))}
-        </div>
+            ))}
+          </div>
         </SortableContext>
       </DndContext>
 

@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Task, TaskGroup } from '../types';
-
-// Update the USERS constant to use real users
-const USERS = [
-  { id: 'd7bed21c-5a38-4c44-9d0c-f0b6f5b0c8d1', name: 'Minh Le', role: 'Admin' },
-  { id: 'e8bed21c-5a38-4c44-9d0c-f0b6f5b0c8d2', name: 'Tony Duong', role: 'Admin' },
-  { id: 'f9bed21c-5a38-4c44-9d0c-f0b6f5b0c8d3', name: 'Linh Pham', role: 'Admin' },
-  { id: 'a1bed21c-5a38-4c44-9d0c-f0b6f5b0c8d4', name: 'Thao Nguyen', role: 'Coach' },
-  { id: 'b2bed21c-5a38-4c44-9d0c-f0b6f5b0c8d5', name: 'Thanh Nguyen', role: 'Mentor' }
-];
+import { SearchableSelect } from './SearchableSelect';
+import { getUsers } from '../services/userService';
+import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
 
 interface TaskFormProps {
   groups: TaskGroup[];
@@ -19,34 +14,85 @@ interface TaskFormProps {
 }
 
 export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormProps) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<Task['priority']>('medium');
-  const [groupId, setGroupId] = useState(groups[0]?.id || '');
-  const [tags, setTags] = useState<string[]>([]);
+  const { user } = useAuth();
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [users, setUsers] = useState<{ value: string; label: string }[]>([]);
+  const [priority, setPriority] = useState<Task['priority']>(initialData?.priority || 'medium');
+  const [status, setStatus] = useState<Task['status']>(initialData?.status || 'pending');
+  const [dueDate, setDueDate] = useState(initialData?.due_date || '');
+  const [assignee, setAssignee] = useState(initialData?.assignee || '');
+  const [groupId, setGroupId] = useState(initialData?.groupId || groups[0]?.id);
+  const [tags, setTags] = useState(initialData?.tags || []);
   const [newTag, setNewTag] = useState('');
-  const [assignee, setAssignee] = useState('');
+  const [assignableUsers, setAssignableUsers] = useState<{ value: string, label: string }[]>([]);
 
+  const retrievedDueDate = dueDate.split('T')[0];
+  
   useEffect(() => {
-    if (initialData) {
-      setTitle(initialData.title);
-      setDescription(initialData.description || '');
-      if (initialData.due_date) {
-        const date = new Date(initialData.due_date);
-                
-        setDueDate(initialData.due_date.split('T')[0]); 
+    const loadAssignableUsers = async () => {
+      try {
+        if (user?.role === 'student') {
+          // Get student's coach and mentor
+          const { data: studentData, error: studentError } = await supabase
+            .from('students')
+            .select(`
+              coach:coach_id(id, full_name),
+              mentor:mentor_id(id, full_name)
+            `)
+            .eq('id', user.id)
+            .single();
+
+          if (studentError) throw studentError;
+
+          const users = [
+            { value: user.full_name, label: user.full_name }
+          ];
+
+          if (studentData.coach) {
+            users.push({ 
+              value: studentData.coach.full_name,
+              label: studentData.coach.full_name
+            });
+          }
+          if (studentData.mentor) {
+            users.push({
+              value: studentData.mentor.full_name,
+              label: studentData.mentor.full_name
+            });
+          }
+
+          setAssignableUsers(users);
+          // Auto-select the student as assignee if creating a new task
+          if (!initialData) {
+            setAssignee(user.full_name);
+          }
+        } else {
+          // For staff, get all users
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .order('full_name');
+
+          if (error) throw error;
+          setAssignableUsers(
+            data.map(user => ({
+              value: user.full_name,
+              label: user.full_name
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Error loading assignable users:', err);
       }
-      setPriority(initialData.priority);
-      setGroupId(initialData.groupId);
-      setTags(initialData.tags || []);
-      setAssignee(initialData.assignee || '');
-    }
-  }, [initialData]);
+    };
+
+    loadAssignableUsers();
+  }, [user, initialData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+    console.log(dueDate);
     onSubmit({
       title,
       description,
@@ -162,29 +208,22 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
                   <input
                     type="date"
                     id="dueDate"
-                    value={dueDate}
+                    value={ retrievedDueDate }
                     onChange={(e) => setDueDate(e.target.value)}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />
                 </div>
 
-                <div>
-                  <label htmlFor="assignee" className="block text-sm font-medium text-gray-700">
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">
                     Assignee
                   </label>
-                  <select
-                    id="assignee"
+                  <SearchableSelect
+                    options={assignableUsers}
                     value={assignee}
-                    onChange={(e) => setAssignee(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  >
-                    <option value="">Unassigned</option>
-                    {USERS.map(user => (
-                      <option key={user.id} value={user.name}>
-                        {user.name} ({user.role})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setAssignee}
+                    placeholder="Select assignee"
+                  />
                 </div>
               </div>
 

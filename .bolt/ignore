@@ -25,10 +25,13 @@ src/types/*
 src/pages/Login.tsx
 src/pages/SignUp.tsx
 src/pages/ForgotPassword.tsx
+src/pages/ResetPassword.tsx
 
 src/pages/UserManagement.tsx
 src/pages/StudentManagement.tsx
 src/pages/Dashboard.tsx
+src/pages/Progress.tsx
+src/pages/Profile.tsx
 
 
 src/components/AddUserModal.tsx
@@ -38,26 +41,19 @@ src/components/EditStudentModal.tsx
 src/components/EditUserModal.tsx
 src/components/ImportUsersModal.tsx
 src/components/PasswordStrengthIndicator.tsx
-src/components/ProtectedRoute.tsx
-src/components/ToastContainer.tsx
-src/components/Toast.tsx
-
 
 src/components/ProgressOverview.tsx
-src/components/TaskForm.tsx
+src/components/ProtectedRoute.tsx
+src/components/SearchableSelect.tsx
+src/components/SubtaskForm.tsx
 src/components/TaskBoard.tsx
+src/components/TaskForm.tsx
 src/components/TaskGroup.tsx
 src/components/TaskList.tsx
 src/components/TaskPanel.tsx
-src/components/SubtaskForm.tsx
-
-
-src/components/NotificationBell.tsx
-src/components/NotificationPanel.tsx
-
-
+src/components/ToastContainer.tsx
+src/components/Toast.tsx
 src/components/Layout.tsx
-
 
 
 

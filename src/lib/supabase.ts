@@ -9,20 +9,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 // Task Groups
-export async function fetchTaskGroups(): Promise<TaskGroup[]> {
-  const { data, error } = await supabase
+export async function fetchTaskGroups(userId?: string): Promise<TaskGroup[]> {
+  let query = supabase
     .from('task_groups')
     .select('*')
     .order('order');
+
+  if (userId) {
+    query = query.eq('owner_id', userId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
   return data;
 }
 
 export async function createTaskGroup(group: Omit<TaskGroup, 'id'>): Promise<TaskGroup> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('User not authenticated');
+
   const { data, error } = await supabase
     .from('task_groups')
-    .insert([group])
+    .insert([{ ...group, owner_id: group.owner_id || user.id }])
     .select()
     .single();
 
@@ -146,7 +155,7 @@ export async function fetchTasks(): Promise<Task[]> {
 }
 
 export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'subtasks' | 'resources'>): Promise<Task> {
-  const { groupId, ...rest } = task;
+  const { groupId, created_by, ...rest } = task;
 
   // Get the group order
   const { data: group } = await supabase
@@ -174,6 +183,7 @@ export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated
   const dbTask = {
     ...rest,
     due_date: rest.due_date || null,
+    created_by,
     group_id: groupId,
     tags: rest.tags || [],
     parent_id: null,
@@ -577,18 +587,17 @@ export async function updateStudentProfile(
 export async function updateAvatar(userId: string, file: File): Promise<string> {
   try {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${userId}.${fileExt}`;
-    const filePath = `avatars/${fileName}`;
+    const fileName = `${userId}.${fileExt}`; // Use userId directly as filename
 
     const { error: uploadError } = await supabase.storage
       .from('profiles')
-      .upload(filePath, file, { upsert: true });
+      .upload(fileName, file, { upsert: true });
 
     if (uploadError) throw uploadError;
 
     const { data: { publicUrl } } = supabase.storage
       .from('profiles')
-      .getPublicUrl(filePath);
+      .getPublicUrl(fileName);
 
     await updateProfile(userId, { avatar_url: publicUrl });
 

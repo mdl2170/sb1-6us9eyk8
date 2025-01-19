@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useToastStore } from '../stores/useToastStore';
 import { fetchProfile, updateProfile, updateStudentProfile, updateAvatar } from '../lib/supabase';
-import { Camera, Briefcase, Calendar, Mail, MapPin, User, Upload } from 'lucide-react';
+import { Camera, Briefcase, Calendar, Mail, MapPin, User, Upload, School, Clock, GraduationCap, Globe, Book, Link, Phone, Folder, Facebook } from 'lucide-react';
 import type { StudentProfile } from '../types';
 
 export function Profile() {
@@ -13,12 +13,50 @@ export function Profile() {
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     full_name: '',
+    email: '',
+    phone: '',
+    program_type: '',
+    school: '',
+    major: '',
+    timezone: '',
+    linkedin_url: '',
+    facebook_url: '',
+    student_folder_url: '',
+    program_start_date: '',
+    expected_end_date: '',
+    school_graduation_date: '',
     target_role: '',
     cohort: '',
     job_search_status: '',
-  });
+    specialization: [] as string[],
+    expertise: [] as string[],
+  };
+
+  const [formData, setFormData] = useState(initialFormData);
+
+  // Determine which fields to show based on role
+  const visibleFields = useMemo(() => {
+    if (!user) return [];
+
+    switch (user.role) {
+      case 'student':
+        return [
+          'full_name', 'email', 'program_type', 'school', 'major',
+          'timezone', 'linkedin_url', 'program_start_date', 'expected_end_date',
+          'school_graduation_date', 'target_role', 'cohort', 'job_search_status'
+        ];
+      case 'coach':
+        return ['full_name', 'email', 'specialization'];
+      case 'mentor':
+        return ['full_name', 'email', 'expertise'];
+      case 'admin':
+        return ['full_name', 'email'];
+      default:
+        return ['full_name', 'email'];
+    }
+  }, [user?.role]);
 
   useEffect(() => {
     if (user) {
@@ -33,9 +71,23 @@ export function Profile() {
       setProfile(profileData);
       setFormData({
         full_name: profileData.full_name,
+        email: profileData.email,
+        phone: profileData.phone || '',
+        program_type: profileData.program_type || '',
+        school: profileData.school || '',
+        major: profileData.major || '',
+        timezone: profileData.timezone || '',
+        linkedin_url: profileData.linkedin_url || '',
+        facebook_url: profileData.facebook_url || '',
+        student_folder_url: profileData.student_folder_url || '',
+        program_start_date: profileData.program_start_date || '',
+        expected_end_date: profileData.expected_end_date || '',
+        school_graduation_date: profileData.school_graduation_date || '',
         target_role: profileData.target_role || '',
         cohort: profileData.cohort || '',
         job_search_status: profileData.job_search_status || '',
+        specialization: profileData.specialization || [],
+        expertise: profileData.expertise || [],
       });
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -62,17 +114,28 @@ export function Profile() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const { email, ...profileUpdates } = formData;
 
     try {
       await updateProfile(user.id, {
-        full_name: formData.full_name,
+        full_name: profileUpdates.full_name,
       });
 
-      await updateStudentProfile(user.id, {
-        target_role: formData.target_role,
-        cohort: formData.cohort,
-        job_search_status: formData.job_search_status as StudentProfile['job_search_status'],
-      });
+      if (user.role === 'student') {
+        await updateStudentProfile(user.id, {
+          target_role: profileUpdates.target_role,
+          program_type: profileUpdates.program_type,
+          school: profileUpdates.school,
+          major: profileUpdates.major,
+          timezone: profileUpdates.timezone,
+          linkedin_url: profileUpdates.linkedin_url,
+          program_start_date: profileUpdates.program_start_date,
+          expected_end_date: profileUpdates.expected_end_date,
+          school_graduation_date: profileUpdates.school_graduation_date,
+          cohort: profileUpdates.cohort,
+          job_search_status: profileUpdates.job_search_status as StudentProfile['job_search_status'],
+        });
+      }
 
       setIsEditing(false);
       loadProfile();
@@ -110,10 +173,10 @@ export function Profile() {
           <div className="flex items-end -mt-16 mb-4">
             <div className="relative">
               <div className="h-32 w-32 rounded-full border-4 border-white overflow-hidden bg-white">
-                {profile.avatar_url ? (
+                {profile?.avatar_url ? (
                   <img
-                    src={profile.avatar_url}
-                    alt={profile.full_name}
+                    src={profile?.avatar_url}
+                    alt={profile?.full_name}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -137,8 +200,8 @@ export function Profile() {
               />
             </div>
             <div className="ml-6 flex-1">
-              <h1 className="text-2xl font-bold text-gray-900">{profile.full_name}</h1>
-              <p className="text-gray-500">{profile.email}</p>
+              <h1 className="text-2xl font-bold text-gray-900">{profile?.full_name}</h1>
+              <p className="text-sm text-gray-500 mt-1 capitalize">{profile?.role}</p>
             </div>
             {!isEditing && (
               <button
@@ -152,60 +215,182 @@ export function Profile() {
 
           {/* Profile Info */}
           {isEditing ? (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.full_name}
-                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Basic Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Full Name
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.full_name}
+                      onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      disabled
+                      className="mt-1 block w-full rounded-md border-gray-300 bg-gray-50 shadow-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Phone
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Timezone
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.timezone}
+                      onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      placeholder="e.g., UTC+7"
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Target Role
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.target_role}
-                    onChange={(e) => setFormData({ ...formData, target_role: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
+              {/* School Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">School Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      School
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.school}
+                      onChange={(e) => setFormData({ ...formData, school: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Major
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.major}
+                      onChange={(e) => setFormData({ ...formData, major: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      School Graduation Date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.school_graduation_date}
+                      onChange={(e) => setFormData({ ...formData, school_graduation_date: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Cohort
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.cohort}
-                    onChange={(e) => setFormData({ ...formData, cohort: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
+              {/* Social Links */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Social Links</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      LinkedIn URL
+                    </label>
+                    <input
+                      type="url"
+                      value={formData.linkedin_url}
+                      onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      placeholder="https://linkedin.com/in/username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Facebook URL
+                    </label>
+                    <input
+                      type="url"
+                      value={formData.facebook_url}
+                      onChange={(e) => setFormData({ ...formData, facebook_url: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      placeholder="https://facebook.com/username"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Student Folder URL
+                    </label>
+                    <input
+                      type="url"
+                      value={formData.student_folder_url}
+                      onChange={(e) => setFormData({ ...formData, student_folder_url: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Job Search Status
-                  </label>
-                  <select
-                    value={formData.job_search_status}
-                    onChange={(e) => setFormData({ ...formData, job_search_status: e.target.value })}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  >
-                    <option value="">Select status</option>
-                    <option value="not_started">Not Started</option>
-                    <option value="preparing">Preparing</option>
-                    <option value="actively_searching">Actively Searching</option>
-                    <option value="interviewing">Interviewing</option>
-                    <option value="accepted_offer">Accepted Offer</option>
-                  </select>
+              {/* Program Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Program Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Program Type
+                    </label>
+                    <select
+                      value={formData.program_type}
+                      onChange={(e) => setFormData({ ...formData, program_type: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    >
+                      <option value="">Select program type</option>
+                      <option value="full_time">Full Time</option>
+                      <option value="part_time">Part Time</option>
+                      <option value="self_paced">Self Paced</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Program Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.program_start_date}
+                      onChange={(e) => setFormData({ ...formData, program_start_date: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Expected End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.expected_end_date}
+                      onChange={(e) => setFormData({ ...formData, expected_end_date: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -226,73 +411,196 @@ export function Profile() {
               </div>
             </form>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div className="flex items-center space-x-3">
-                <Mail className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Email</p>
-                  <p className="text-gray-900">{profile.email}</p>
+            <div className="space-y-8">
+              {/* Basic Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex items-center space-x-3">
+                    <Mail className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Email</p>
+                      <p className="text-gray-900">{profile?.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Phone className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Phone</p>
+                      <p className="text-gray-900">{profile?.phone || 'Not set'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Globe className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Timezone</p>
+                      <p className="text-gray-900">{profile?.timezone || 'Not set'}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <Briefcase className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Target Role</p>
-                  <p className="text-gray-900">{profile.target_role || 'Not set'}</p>
+              {/* School Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">School Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex items-center space-x-3">
+                    <School className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">School</p>
+                      <p className="text-gray-900">{profile?.school || 'Not set'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Book className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Major</p>
+                      <p className="text-gray-900">{profile?.major || 'Not set'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <GraduationCap className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">School Graduation Date</p>
+                      <p className="text-gray-900">{profile?.school_graduation_date ? new Date(profile.school_graduation_date).toLocaleDateString() : 'Not set'}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <MapPin className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Cohort</p>
-                  <p className="text-gray-900">{profile.cohort || 'Not assigned'}</p>
+              {/* Social Links */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Social Links</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex items-center space-x-3">
+                    <Link className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">LinkedIn</p>
+                      <p className="text-gray-900">
+                        {profile?.linkedin_url ? (
+                          <a
+                            href={profile.linkedin_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-500"
+                          >
+                            View Profile
+                          </a>
+                        ) : (
+                          'Not set'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Facebook className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Facebook</p>
+                      <p className="text-gray-900">
+                        {profile?.facebook_url ? (
+                          <a
+                            href={profile.facebook_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-500"
+                          >
+                            View Profile
+                          </a>
+                        ) : (
+                          'Not set'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Folder className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Student Folder</p>
+                      <p className="text-gray-900">
+                        {profile?.student_folder_url ? (
+                          <a
+                            href={profile.student_folder_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-500"
+                          >
+                            View Folder
+                          </a>
+                        ) : (
+                          'Not set'
+                        )}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3">
-                <Calendar className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Enrolled</p>
-                  <p className="text-gray-900">
-                    {new Date(profile.enrollment_date).toLocaleDateString()}
-                  </p>
+              {/* Program Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium text-gray-900">Program Information</h3>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex items-center space-x-3">
+                    <School className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Program Type</p>
+                      <p className="text-gray-900 capitalize">{profile?.program_type?.replace(/_/g, ' ') || 'Not set'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Calendar className="h-5 w-5 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Program Dates</p>
+                      <p className="text-gray-900">
+                        {profile?.program_start_date ? (
+                          <>
+                            {new Date(profile.program_start_date).toLocaleDateString()} - 
+                            {profile?.expected_end_date ? 
+                              new Date(profile.expected_end_date).toLocaleDateString() : 
+                              'Ongoing'}
+                          </>
+                        ) : (
+                          'Not set'
+                        )}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* Additional Sections */}
-        <div className="border-t border-gray-200 px-6 py-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">Support Team</h2>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {profile.coach && (
-              <div className="flex items-center space-x-4">
-                <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
-                  <User className="h-6 w-6 text-indigo-600" />
+        {/* Support Team Section - Only visible for students */}
+        {profile?.role === 'student' && (profile?.coach || profile?.mentor) && (
+          <div className="border-t border-gray-200 px-6 py-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">Support Team</h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {profile.coach && (
+                <div className="flex items-center space-x-4">
+                  <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+                    <User className="h-6 w-6 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{profile.coach.full_name}</p>
+                    <p className="text-sm text-gray-500">Coach</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{profile.coach.full_name}</p>
-                  <p className="text-sm text-gray-500">Coach</p>
-                </div>
-              </div>
-            )}
+              )}
 
-            {profile.mentor && (
-              <div className="flex items-center space-x-4">
-                <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
-                  <User className="h-6 w-6 text-purple-600" />
+              {profile.mentor && (
+                <div className="flex items-center space-x-4">
+                  <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
+                    <User className="h-6 w-6 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{profile.mentor.full_name}</p>
+                    <p className="text-sm text-gray-500">Mentor</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{profile.mentor.full_name}</p>
-                  <p className="text-sm text-gray-500">Mentor</p>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
