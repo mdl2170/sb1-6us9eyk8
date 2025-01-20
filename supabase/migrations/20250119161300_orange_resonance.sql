@@ -1,19 +1,4 @@
-/*
-  # Edge Function for Email Processing
-
-  1. New Features
-    - Add Edge function to process email queue
-    - Add retry mechanism
-    - Add error handling
-*/
-
--- Create type for email result
-CREATE TYPE email_result AS (
-  success boolean,
-  error text
-);
-
--- Function to process email queue
+-- Update the process_email_queue function to use the http() function directly
 CREATE OR REPLACE FUNCTION process_email_queue()
 RETURNS void
 LANGUAGE plpgsql
@@ -22,6 +7,8 @@ AS $$
 DECLARE
   email_record record;
   smtp_config record;
+  response_status integer;
+  response_body jsonb;
 BEGIN
   -- Get SMTP configuration
   SELECT 
@@ -49,8 +36,13 @@ BEGIN
 
     -- Call Edge function to send email
     BEGIN
-      SELECT http_post(
-      get_config('edge_function_url') || '/send-email',
+      SELECT 
+        status,
+        content::jsonb INTO response_status, response_body
+      FROM http(
+        'POST',
+        (SELECT value FROM app_config WHERE key = 'edge_function_url') || '/send-email',
+        ARRAY[('Content-Type', 'application/json')],
         jsonb_build_object(
           'to', email_record.to_email,
           'subject', email_record.subject,
@@ -63,15 +55,24 @@ BEGIN
             'sender_email', smtp_config.sender_email,
             'sender_name', smtp_config.sender_name
           )
-        )
+        )::text
       );
 
-      -- Mark as sent
-      UPDATE email_queue
-      SET 
-        status = 'sent',
-        sent_at = now()
-      WHERE id = email_record.id;
+      -- Check response status
+      IF response_status >= 200 AND response_status < 300 THEN
+        -- Mark as sent
+        UPDATE email_queue
+        SET 
+          status = 'sent',
+          sent_at = now(),
+          error_message = NULL
+        WHERE id = email_record.id;
+
+        -- Log success
+        RAISE NOTICE 'Email sent successfully to %: %', email_record.to_email, response_body;
+      ELSE
+        RAISE EXCEPTION 'Failed to send email. Status: %, Response: %', response_status, response_body;
+      END IF;
 
     EXCEPTION WHEN OTHERS THEN
       -- Handle failure
@@ -87,6 +88,9 @@ BEGIN
             NULL 
         END
       WHERE id = email_record.id;
+
+      -- Log error
+      RAISE NOTICE 'Failed to send email to %: %', email_record.to_email, SQLERRM;
     END;
   END LOOP;
 END;
