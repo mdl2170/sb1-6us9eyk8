@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/useToastStore';
 import { supabase, supabaseAdmin } from '../lib/supabase';
-import { Shield, UserPlus, Search, Filter, MoreVertical, User, CheckSquare, Square } from 'lucide-react';
+import { Mail, UserPlus, Search, Filter, User, CheckSquare, Square } from 'lucide-react';
 import type { Profile } from '../types';
 import { AddUserModal } from '../components/AddUserModal';
 import { EditUserModal } from '../components/EditUserModal';
 import { ImportUsersModal } from '../components/ImportUsersModal';
 import { BulkActionModal } from '../components/BulkActionModal';
+
 
 function formatDate(dateString: string): string {
   // Extract date parts directly from the string
@@ -227,6 +228,21 @@ export function UserManagement() {
     }
   };
 
+  const sendWelcomeEmail = async (userId: string) => {
+    try {
+      const { error } = await supabaseAdmin.rpc('send_welcome_email', {
+        user_id: userId
+      });
+
+      if (error) throw error;
+
+      addToast('Welcome email sent successfully', 'success');
+    } catch (error) {
+      console.error('Error sending welcome email:', error);
+      addToast('Failed to send welcome email', 'error');
+    }
+  };
+  
   const handleSort = (key: keyof Profile) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -378,6 +394,7 @@ export function UserManagement() {
                   <option value="">Bulk Actions</option>
                   <option value="role">Change Role</option>
                   <option value="status">Change Status</option>
+                  <option value="welcome">Send Welcome Emails</option>
                   <option value="delete">Delete Users</option>
                 </select>
                 <span className="text-sm font-medium text-gray-700">
@@ -574,8 +591,16 @@ export function UserManagement() {
                         >
                           Delete
                         </button>
+                        <button
+                          onClick={() => sendWelcomeEmail(user.id)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Send welcome email"
+                        >
+                          <Mail className="h-5 w-5" />
+                        </button>
                       </div>
                     </td>
+                    
                   </tr>
                 ))}
               </tbody>

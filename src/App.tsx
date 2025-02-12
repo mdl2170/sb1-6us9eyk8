@@ -8,12 +8,13 @@ import { SignUp } from './pages/SignUp';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { Dashboard } from './pages/Dashboard';
-import { Progress } from './pages/Progress';
+import { TaskManagement } from './pages/TaskManagement';
 import { Reports } from './pages/Reports';
 import { Profile } from './pages/Profile';
 import { UserManagement } from './pages/UserManagement';
 import { StudentManagement } from './pages/StudentManagement';
 import { ToastContainer } from './components/ToastContainer';
+import { JobSearch } from './pages/JobSearch';
 
 function App() {
   return (
@@ -30,11 +31,12 @@ function App() {
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/progress" element={<Progress />} />
+          <Route path="/task" element={<TaskManagement />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/users" element={<UserManagement />} />
           <Route path="/students" element={<StudentManagement />} />
+          <Route path="/job-search" element={<JobSearch />} />
         </Route>
       </Routes>
     </AuthProvider>

@@ -6,7 +6,7 @@ import type { Profile } from '../types';
 
 interface BulkActionModalProps {
   selectedUsers: Profile[];
-  action: 'role' | 'status' | 'delete';
+  action: 'role' | 'status' | 'delete' | 'welcome';
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -112,6 +112,17 @@ export function BulkActionModal({ selectedUsers, action, onClose, onSuccess }: B
           );
           break;
 
+        case 'welcome':
+          await Promise.all(
+            selectedUsers.map(async (user) => {
+              const { error } = await supabaseAdmin.rpc('send_welcome_email', {
+                user_id: user.id
+              });
+              if (error) throw error;
+            })
+          );
+          break;
+
         case 'delete':
           await Promise.all(
             selectedUsers.map(async (user) => {
@@ -170,6 +181,8 @@ export function BulkActionModal({ selectedUsers, action, onClose, onSuccess }: B
         return 'Change Role';
       case 'status':
         return 'Change Status';
+      case 'welcome':
+        return 'Send Welcome Emails';
       case 'delete':
         return 'Delete Users';
     }
@@ -201,11 +214,14 @@ export function BulkActionModal({ selectedUsers, action, onClose, onSuccess }: B
 
             <div className="mb-4">
               <p className="text-sm text-gray-500">
-                This action will affect {selectedUsers.length} selected users.
+                {action === 'welcome' 
+                  ? `Send welcome emails to ${selectedUsers.length} selected users?`
+                  : `This action will affect ${selectedUsers.length} selected users.`
+                }
               </p>
             </div>
 
-            {action !== 'delete' && (
+            {action !== 'delete' && action !== 'welcome' && (
               <div className="space-y-4">
                 {action === 'role' ? (
                   <div>
@@ -257,7 +273,7 @@ export function BulkActionModal({ selectedUsers, action, onClose, onSuccess }: B
               </button>
               <button
                 type="submit"
-                disabled={isLoading || (!value && action !== 'delete')}
+                disabled={isLoading || (!value && action !== 'delete' && action !== 'welcome')}
                 className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md disabled:opacity-50 disabled:cursor-not-allowed ${
                   action === 'delete'
                     ? 'bg-red-600 hover:bg-red-700'

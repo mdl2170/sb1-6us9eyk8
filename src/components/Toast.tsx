@@ -34,7 +34,9 @@ export function Toast({ message, type, onClose }: ToastProps) {
     <div className={`fixed bottom-4 right-4 z-50 rounded-lg p-4 shadow-lg ${styles[type]}`}>
       <div className="flex items-center space-x-2">
         {icons[type]}
-        <p className="text-sm font-medium">{message}</p>
+        <p className="text-sm font-medium">
+          {typeof message === 'object' ? message.message : message}
+        </p>
         <button
           onClick={onClose}
           className="ml-4 inline-flex rounded-md p-1.5 hover:bg-black hover:bg-opacity-10"

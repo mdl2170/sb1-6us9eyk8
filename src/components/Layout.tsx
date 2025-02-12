@@ -27,11 +27,17 @@ export function Layout() {
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Progress', href: '/progress', icon: LineChart },
-    { name: 'Reports', href: '/reports', icon: BarChart3 },
+    { name: 'Task', href: '/task', icon: LineChart },
+    {
+      name: 'Job Search',
+      href: '/job-search',
+      icon: Briefcase,
+      roles: ['student']
+    },
     ...(user?.role === 'admin' ? [
       { name: 'Users', href: '/users', icon: Users },
-      { name: 'Students', href: '/students', icon: GraduationCap }
+      { name: 'Students', href: '/students', icon: GraduationCap },
+      { name: 'Reports', href: '/reports', icon: BarChart3, roles: ['admin', 'coach', 'mentor',] },
     ] : []),
   ];
 
