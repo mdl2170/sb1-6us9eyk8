@@ -16,12 +16,12 @@ export function ForgotPassword() {
 
     try {
       setIsLoading(true);
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const { error } = await supabase
+        .rpc('request_password_reset', {
+          email_address: email
       });
 
       if (error) {
-        // More specific error message based on the error
         const errorMessage = error.message || 'Failed to send reset password email';
         addToast(errorMessage, 'error');
         return;

@@ -24,8 +24,7 @@ src/types/*
 
 src/pages/Login.tsx
 src/pages/SignUp.tsx
-src/pages/ForgotPassword.tsx
-src/pages/ResetPassword.tsx
+
 
 src/pages/StudentManagement.tsx
 src/pages/Dashboard.tsx
