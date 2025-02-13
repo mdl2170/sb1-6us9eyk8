@@ -83,7 +83,7 @@ serve(async (req) => {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              from: 'Task Manager <notifications@careerpassinstitute.com>',
+              from: 'CPI SMS <notifications@careerpassinstitute.com>',
               to: email.to_email,
               subject: email.subject,
               html: email.body

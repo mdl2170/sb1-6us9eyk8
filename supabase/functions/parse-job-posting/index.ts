@@ -1,15 +1,151 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { DOMParser } from 'https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': '*',
   'Access-Control-Max-Age': '86400'
-}
+};
 
 interface RequestBody {
   jobId: string;
   url: string;
+}
+
+interface JobData {
+  company_name?: string;
+  position_title?: string;
+  company_size?: string;
+  location?: string;
+  job_description?: string;
+  company_url?: string;
+  work_type?: string;
+}
+
+async function scrapeLinkedInJob(url: string): Promise<JobData> {
+  try {
+    // Fetch the job page
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch job page: ${response.status}`);
+    }
+
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    if (!doc) {
+      throw new Error('Failed to parse HTML');
+    }
+
+    // Extract job details
+    const jobData: JobData = {};
+
+    // Position title
+    const titleElement = doc.querySelector('h1');
+    if (titleElement) {
+      jobData.position_title = titleElement.textContent.trim();
+    }
+
+    // Company name and URL
+    const companyElement = doc.querySelector('[data-tracking-control-name="public_jobs_topcard-org-name"]');
+    if (companyElement) {
+      jobData.company_name = companyElement.textContent.trim();
+      
+      // Get company URL from href attribute
+      const href = companyElement.getAttribute('href');
+      if (href) {
+        jobData.company_url = href;
+        
+        // Try to fetch company size from company page
+        try {
+          const companyResponse = await fetch(href);
+          if (companyResponse.ok) {
+            const companyHtml = await companyResponse.text();
+            const companyDoc = parser.parseFromString(companyHtml, 'text/html');
+            
+            if (companyDoc) {
+              const employeeCountElement = companyDoc.querySelector('.org-about-company-module__company-staff-count-range');
+              if (employeeCountElement) {
+                const employeeCount = employeeCountElement.textContent.trim().toLowerCase();
+                
+                // Map employee count ranges to company sizes
+                if (employeeCount.includes('1-50') || employeeCount.includes('51-200')) {
+                  jobData.company_size = 'startup';
+                } else if (employeeCount.includes('201-500')) {
+                  jobData.company_size = 'small';
+                } else if (employeeCount.includes('501-1000') || employeeCount.includes('1001-5000')) {
+                  jobData.company_size = 'midsize';
+                } else if (employeeCount.includes('5001-10000')) {
+                  jobData.company_size = 'large';
+                } else {
+                  jobData.company_size = 'enterprise';
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching company details:', error);
+        }
+      }
+    }
+
+    // Location
+    const locationElement = doc.querySelector('.job-details-jobs-unified-top-card__bullet');
+    if (locationElement) {
+      jobData.location = locationElement.textContent.trim();
+    }
+
+    // Job description
+    const descriptionElement = doc.querySelector('.show-more-less-html__markup');
+    if (descriptionElement) {
+      jobData.job_description = descriptionElement.textContent.trim();
+    }
+
+    // Work type (look for keywords in description)
+    const description = jobData.job_description?.toLowerCase() || '';
+    if (description.includes('remote')) {
+      jobData.work_type = 'remote';
+    } else if (description.includes('hybrid')) {
+      jobData.work_type = 'hybrid';
+    } else {
+      jobData.work_type = 'onsite';
+    }
+
+    // If we couldn't determine company size from the company page,
+    // try to determine from company name or description
+    if (!jobData.company_size) {
+      const enterpriseCompanies = [
+        'microsoft', 'google', 'amazon', 'apple', 'meta', 'facebook',
+        'oracle', 'salesforce', 'ibm', 'intel', 'cisco', 'adobe',
+        'vmware', 'sap', 'intuit', 'servicenow'
+      ];
+      
+      const companyNameLower = jobData.company_name?.toLowerCase() || '';
+      const isEnterprise = enterpriseCompanies.some(company => 
+        companyNameLower.includes(company)
+      );
+      
+      if (isEnterprise) {
+        jobData.company_size = 'enterprise';
+      } else if (description.includes('startup')) {
+        jobData.company_size = 'startup';
+      } else {
+        jobData.company_size = 'midsize'; // Default to midsize
+      }
+    }
+
+    return jobData;
+  } catch (error) {
+    console.error('Error scraping LinkedIn job:', error);
+    throw error;
+  }
 }
 
 serve(async (req) => {
@@ -40,13 +176,13 @@ serve(async (req) => {
       );
     }
 
-    const { jobId, url } = await req.json() as RequestBody;
+    const { url } = await req.json() as RequestBody;
 
-    if (!jobId || !url) {
+    if (!url) {
       return new Response(
         JSON.stringify({
           error: 'Missing required fields',
-          message: 'Job ID and URL are required'
+          message: 'URL is required'
         }),
         {
           status: 400,
@@ -58,89 +194,8 @@ serve(async (req) => {
       );
     }
 
-    // Extract company name and position from URL first
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/');
-    const searchParams = new URLSearchParams(urlObj.search);
-
-    // Initialize job data with defaults
-    const jobData = {
-      company_name: '',
-      position_title: '',
-      location: '',
-      job_description: 'Please copy the job description from LinkedIn',
-      company_url: '',
-      work_type: 'onsite',
-      company_size: 'enterprise',
-      application_url: url
-    };
-
-    // Try to extract position and company from the URL path
-    const jobSlug = pathParts.find(part => part.includes('-at-'));
-    if (jobSlug) {
-      const [title, company] = jobSlug.split('-at-').map(part => 
-        part.replace(/-/g, ' ')
-           .split(' ')
-           .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-           .join(' ')
-      );
-      
-      if (title) jobData.position_title = title;
-      if (company) jobData.company_name = company;
-    }
-
-    // Try to get data from search params
-    const currentJobId = searchParams.get('currentJobId');
-    if (currentJobId) {
-      const title = searchParams.get('title');
-      const company = searchParams.get('company');
-      const location = searchParams.get('location');
-
-      if (title) jobData.position_title = decodeURIComponent(title);
-      if (company) jobData.company_name = decodeURIComponent(company);
-      if (location) jobData.location = decodeURIComponent(location);
-    }
-
-    // Try to extract location from refId
-    const refId = searchParams.get('refId');
-    if (refId) {
-      const decodedRef = decodeURIComponent(refId);
-      const locationMatch = decodedRef.match(/location-(.*?)(?:-|$)/);
-      if (locationMatch) {
-        const location = locationMatch[1].replace(/-/g, ' ');
-        if (!jobData.location) {
-          jobData.location = location
-            .split(' ')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
-        }
-      }
-    }
-
-    // Determine work type from various sources
-    const urlLower = url.toLowerCase();
-    const titleLower = jobData.position_title.toLowerCase();
-    const locationLower = jobData.location.toLowerCase();
-
-    if (urlLower.includes('remote') || titleLower.includes('remote') || locationLower.includes('remote')) {
-      jobData.work_type = 'remote';
-    } else if (urlLower.includes('hybrid') || titleLower.includes('hybrid') || locationLower.includes('hybrid')) {
-      jobData.work_type = 'hybrid';
-    }
-
-    // Determine company size
-    const enterpriseCompanies = [
-      'Microsoft', 'Google', 'Amazon', 'Apple', 'Meta', 'LinkedIn',
-      'Oracle', 'Salesforce', 'IBM', 'Intel', 'Cisco', 'Adobe',
-      'VMware', 'SAP', 'Intuit', 'ServiceNow'
-    ];
-    
-    const companyLower = jobData.company_name.toLowerCase();
-    if (enterpriseCompanies.some(company => companyLower.includes(company.toLowerCase()))) {
-      jobData.company_size = 'enterprise';
-    } else if (companyLower.includes('startup')) {
-      jobData.company_size = 'startup';
-    }
+    // Scrape job details
+    const jobData = await scrapeLinkedInJob(url);
 
     return new Response(
       JSON.stringify(jobData),
@@ -157,7 +212,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        message: 'Please enter the job details manually. LinkedIn job parsing is currently limited.'
+        message: 'Failed to parse LinkedIn job details. Please enter the details manually.'
       }),
       {
         status: 400,
