@@ -385,6 +385,10 @@ function TaskRow({
                   setShowSubtaskForm(false);
                 }}
                 onClose={() => setShowSubtaskForm(false)}
+                parentTask={{
+                  id: task.id,
+                  groupId: task.groupId
+                }}
               />
             </div>
           </td>

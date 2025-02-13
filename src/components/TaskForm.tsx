@@ -117,13 +117,13 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div className="flex min-h-screen items-end justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={onCancel} />
 
         {/* Panel */}
-        <div className="inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
+        <div className="inline-block transform rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:align-middle">
           <form onSubmit={handleSubmit} className="bg-white px-4 pt-5 pb-4 sm:p-6">
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-medium text-gray-900">
@@ -215,15 +215,17 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label htmlFor="assignee" className="block text-sm font-medium text-gray-700">
                     Assignee
                   </label>
-                  <SearchableSelect
-                    options={assignableUsers}
-                    value={assignee}
-                    onChange={setAssignee}
-                    placeholder="Select assignee"
-                  />
+                  <div className="relative">
+                    <SearchableSelect
+                      options={assignableUsers}
+                      value={assignee}
+                      onChange={setAssignee}
+                      placeholder="Select assignee"
+                    />
+                  </div>
                 </div>
               </div>
 

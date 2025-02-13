@@ -39,14 +39,9 @@ src/components/EditUserModal.tsx
 src/components/ImportUsersModal.tsx
 src/components/PasswordStrengthIndicator.tsx
 
-src/components/ProgressOverview.tsx
+src/components/job-search/*
 src/components/ProtectedRoute.tsx
-src/components/SearchableSelect.tsx
-src/components/SubtaskForm.tsx
-src/components/TaskBoard.tsx
-src/components/TaskGroup.tsx
-src/components/TaskList.tsx
-src/components/TaskPanel.tsx
+
 
 src/components/Layout.tsx
 

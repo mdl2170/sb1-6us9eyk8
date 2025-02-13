@@ -34,7 +34,6 @@ interface ApplicationFormProps {
 export function ApplicationForm({ application, onSave, onCancel }: ApplicationFormProps) {
   const { user } = useAuth();
   const { addToast } = useToastStore();
-  const [isPopulating, setIsPopulating] = useState(false);
   const [formData, setFormData] = useState<Partial<JobApplication>>(
     application || {
       status: 'draft',
@@ -46,8 +45,7 @@ export function ApplicationForm({ application, onSave, onCancel }: ApplicationFo
   const handleUrlChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const url = e.target.value;
     setFormData(prev => ({ ...prev, application_url: url }));
-    setIsPopulating(true);
-
+    
     if (url && url.includes('linkedin.com/jobs/')) {
       try {
         const jobData = await parseJobUrl(url);
@@ -68,8 +66,6 @@ export function ApplicationForm({ application, onSave, onCancel }: ApplicationFo
           error instanceof Error ? error.message : 'Failed to parse job details. Please enter details manually.',
           'error'
         );
-      } finally {
-        setIsPopulating(false);
       }
     }
   };
@@ -197,29 +193,6 @@ export function ApplicationForm({ application, onSave, onCancel }: ApplicationFo
 
           <div className="mt-5 md:mt-0 md:col-span-2">
             <div className="grid grid-cols-6 gap-6">
-              <div className="col-span-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <h4 className="text-sm font-medium text-blue-800 mb-2">Quick Application Entry</h4>
-                  <p className="text-sm text-blue-700 mb-4">
-                    Enter a LinkedIn job URL below and we'll automatically populate the job details for you.
-                  </p>
-                  <div className="relative">
-                    <input
-                      type="url"
-                      value={formData.application_url || ''}
-                      onChange={handleUrlChange}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                      placeholder="https://www.linkedin.com/jobs/view/..."
-                    />
-                    {isPopulating && (
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
               <div className="col-span-6 sm:col-span-3">
                 <label className="block text-sm font-medium text-gray-700">
                   Company Name
@@ -324,6 +297,19 @@ export function ApplicationForm({ application, onSave, onCancel }: ApplicationFo
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   placeholder="e.g., New York, NY or Remote - US"
+                />
+              </div>
+
+              <div className="col-span-6 sm:col-span-3">
+                <label className="block text-sm font-medium text-gray-700">
+                  Application URL
+                </label>
+                <input
+                  type="url"
+                  value={formData.application_url || ''}
+                  onChange={handleUrlChange}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  placeholder="https://..."
                 />
               </div>
 
