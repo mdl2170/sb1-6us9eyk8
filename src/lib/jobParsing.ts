@@ -1,5 +1,17 @@
 import { supabase } from './supabase';
 
+const SUPPORTED_JOB_BOARDS = [
+  'linkedin.com',
+  'joinhandshake.com',
+  'indeed.com',
+  'builtinnyc.com',
+  'themuse.com',
+  'untapped.io',
+  'wayup.com',
+  'ripplematch.com',
+  'simplify.jobs'
+];
+
 interface ParsedJobData {
   company_name?: string;
   position_title?: string;
@@ -12,101 +24,22 @@ interface ParsedJobData {
 
 export async function parseJobUrl(url: string): Promise<ParsedJobData> {
   try {
-    if (!url.includes('linkedin.com/jobs')) {
-      throw new Error('Only LinkedIn job URLs are supported at this time');
+    // Check if URL is from a supported job board
+    const isSupported = SUPPORTED_JOB_BOARDS.some(board => url.includes(board));
+    if (!isSupported) {
+      throw new Error('Unsupported job board. Currently supported job boards: ' + 
+        SUPPORTED_JOB_BOARDS.map(board => board.replace('.com', '')).join(', '));
     }
 
-    // Extract job ID from LinkedIn URL
-    const jobId = extractLinkedInJobId(url);
-    if (!jobId) {
-      throw new Error('Invalid LinkedIn job URL');
-    }
+    // Call Edge Function to parse job posting
+    const { data, error } = await supabase.functions.invoke('parse-job-posting', {
+      body: { url }
+    });
 
-    try {
-      // Call LinkedIn API via Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('parse-job-posting', {
-        body: { 
-          jobId,
-          url 
-        }
-      });
-
-      if (error) throw error;
-      return data;
-    } catch (functionError) {
-      // If Edge Function fails, extract what we can from the URL
-      return extractJobDataFromUrl(url);
-    }
+    if (error) throw error;
+    return data;
   } catch (error) {
-    console.error('Error parsing job URL:', error);
+    console.error('Error parsing job posting:', error);
     throw error;
   }
-}
-
-function extractJobDataFromUrl(url: string): ParsedJobData {
-  const urlObj = new URL(url);
-  const pathParts = urlObj.pathname.split('/');
-  const searchParams = new URLSearchParams(urlObj.search);
-  
-  // Initialize job data with defaults
-  const jobData: ParsedJobData = {
-    company_name: '',
-    position_title: '',
-    location: '',
-    work_type: 'onsite',
-    company_size: 'enterprise'
-  };
-
-  // Try to extract position title
-  const titleFromPath = pathParts.find(part => part.includes('-at-'));
-  if (titleFromPath) {
-    jobData.position_title = titleFromPath
-      .split('-at-')[0]
-      .replace(/-/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  // Try to extract company name
-  if (titleFromPath) {
-    jobData.company_name = titleFromPath
-      .split('-at-')[1]
-      ?.replace(/-/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
-  // Try to get data from search params
-  const currentJobId = searchParams.get('currentJobId');
-  if (currentJobId) {
-    const title = searchParams.get('title');
-    const company = searchParams.get('company');
-    const location = searchParams.get('location');
-
-    if (title) jobData.position_title = decodeURIComponent(title);
-    if (company) jobData.company_name = decodeURIComponent(company);
-    if (location) jobData.location = decodeURIComponent(location);
-  }
-
-  return jobData;
-}
-
-function extractLinkedInJobId(url: string): string | null {
-  // Handle various LinkedIn URL formats
-  const patterns = [
-    /linkedin\.com\/jobs\/view\/(\d+)/,
-    /linkedin\.com\/jobs\/search\/.*&currentJobId=(\d+)/,
-    /linkedin\.com\/jobs\/collections\/.*&currentJobId=(\d+)/
-  ];
-
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
 }

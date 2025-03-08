@@ -66,14 +66,14 @@ export function TaskManagement() {
 
     if (user?.role === 'student') {
       filtered = tasks.filter(task => 
-        task.created_by === user.id || 
+        task.created_by === user.id ||
         task.assignee === user.full_name
       );
     } else if (selectedStudent) {
       const student = students.find(s => s.id === selectedStudent);
       if (student) {
         filtered = tasks.filter(task =>
-          task.created_by === selectedStudent ||
+          task.created_by === selectedStudent || 
           task.assignee === student.full_name
         );
       }
@@ -136,10 +136,10 @@ export function TaskManagement() {
       // Add created_by field
       const taskWithCreator = {
         ...taskData,
-        created_by: user?.id
+        created_by: user?.id || ''
       };
 
-      const newTask = await createTask(taskData);
+      const newTask = await createTask(taskWithCreator);
       setTasks(prevTasks => [newTask, ...prevTasks]);
       addToast('Task created successfully', 'success');
     } catch (err) {
