@@ -1,29 +1,68 @@
 import React, { useState } from 'react';
-import { createMockInterview } from '../../lib/supabase';
+import { createMockInterview, updateMockInterview, supabase } from '../../lib/supabase';
 import { useToastStore } from '../../stores/useToastStore';
 import { AlertCircle, Video, Plus, X } from 'lucide-react';
-import type { MockInterview } from '../../types';
+import { SearchableSelect } from '../SearchableSelect';
+import { useAuth } from '../../hooks/useAuth';
 
 interface MockInterviewFormProps {
   studentId: string;
-  interviewerId: string;
+  initialData?: MockInterview | null;
+  interviewerId?: string;
   onSuccess: () => void;
   onCancel: () => void;
 }
 
 export function MockInterviewForm({
   studentId,
+  initialData,
   interviewerId,
   onSuccess,
-  onCancel,
+  onCancel
 }: MockInterviewFormProps) {
   const { addToast } = useToastStore();
+  const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const [interview, setInterview] = useState<Omit<MockInterview, 'id' | 'created_at' | 'updated_at'>>({
+  const [interviewers, setInterviewers] = useState<{ value: string; label: string }[]>([]);
+  const [selectedInterviewer, setSelectedInterviewer] = useState(interviewerId || '');
+
+  // Load available interviewers
+  React.useEffect(() => {
+    const loadInterviewers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('role', ['coach', 'mentor', 'admin'])
+          .eq('status', 'active')
+          .order('full_name');
+
+        if (error) throw error;
+        
+        setInterviewers(
+          data.map(user => ({
+            value: user.id,
+            label: user.full_name
+          }))
+        );
+
+        // Set current user as interviewer if they're staff
+        if (!interviewerId && user && ['coach', 'mentor', 'admin'].includes(user.role)) {
+          setSelectedInterviewer(user.id);
+        }
+      } catch (err) {
+        console.error('Error loading interviewers:', err);
+        addToast('Failed to load interviewers', 'error');
+      }
+    };
+    loadInterviewers();
+  }, [user, interviewerId]);
+
+  const [interview, setInterview] = useState<Omit<MockInterview, 'id' | 'created_at' | 'updated_at'>>(initialData || {
     student_id: studentId,
-    interviewer_id: interviewerId,
+    interviewer_id: selectedInterviewer,
     interview_date: new Date().toISOString(),
     interview_type: 'technical',
     recording_url: '',
@@ -41,12 +80,25 @@ export function MockInterviewForm({
     e.preventDefault();
     if (isSubmitting) return;
 
+    if (!selectedInterviewer) {
+      setError('Please select an interviewer');
+      return;
+    }
+    
     try {
       setIsSubmitting(true);
       setError('');
 
-      await createMockInterview(interview);
-      addToast('Mock interview record created successfully', 'success');
+      if (initialData) {
+        await updateMockInterview(initialData.id, interview);
+        addToast('Mock interview updated successfully', 'success');
+      } else {
+        await createMockInterview({
+          ...interview,
+          interviewer_id: selectedInterviewer
+        });
+        addToast('Mock interview created successfully', 'success');
+      }
       onSuccess();
     } catch (err) {
       console.error('Error creating mock interview record:', err);
@@ -142,6 +194,19 @@ export function MockInterviewForm({
                       <option value="technical">Technical</option>
                       <option value="behavioral">Behavioral</option>
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Interviewer
+                    </label>
+                    <SearchableSelect
+                      options={interviewers}
+                      value={selectedInterviewer}
+                      onChange={setSelectedInterviewer}
+                      placeholder="Select interviewer..."
+                      className="mt-1"
+                    />
                   </div>
                 </div>
               </div>

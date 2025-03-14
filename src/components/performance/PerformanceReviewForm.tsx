@@ -40,7 +40,7 @@ export function PerformanceReviewForm({
       networking: '',
       technical: '',
       energy: '',
-    },
+    }
   });
 
   const handleSubmit = async (e: React.FormEvent) => {

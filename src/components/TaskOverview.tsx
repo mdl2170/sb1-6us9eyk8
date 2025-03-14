@@ -30,8 +30,7 @@ export function TaskOverview({ tasks }: ProgressOverviewProps) {
     .slice(0, 3);
 
   return (
-    <div className="mb-8">
-      <h2 className="text-lg font-medium text-gray-900 mb-4">At a Glance</h2>
+    <div className="mb-8 mt-8">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Completion Rate */}
         <div className="bg-white overflow-hidden shadow rounded-lg">

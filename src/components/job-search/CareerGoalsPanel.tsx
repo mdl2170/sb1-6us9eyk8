@@ -71,9 +71,10 @@ interface CareerGoal {
   monthly_alumni_goal: number;
   monthly_industry_goal: number;
   monthly_recruiter_goal: number;
+  studentId?: string;
 }
 
-export function CareerGoalsPanel() {
+export function CareerGoalsPanel({ studentId }: CareerGoalsPanel) {
   const { user } = useAuth();
   const { addToast } = useToastStore();
   const [goals, setGoals] = useState<CareerGoal | null>(null);
@@ -95,29 +96,26 @@ export function CareerGoalsPanel() {
 
   useEffect(() => {
     loadCareerGoals();
-  }, [user?.id]);
+  }, [studentId]);
 
   async function loadCareerGoals() {
     try {
       const { data, error } = await supabase
         .from('career_goals')
         .select('*')
-        .eq('student_id', user?.id)
+        .eq('student_id', studentId)
         .maybeSingle();
 
       if (error) throw error;
 
-      setGoals(data);
-      setFormData(data || {
+      setGoals(data || {
+        weekly_application_goal: 5,
+        weekly_connection_goal: 3,
         target_roles: [],
         target_industries: [],
-        weekly_application_goal: 5,
-        weekly_connection_goal: 5,
-        weekly_interview_goal: 2,
-        weekly_event_goal: 1,
-        monthly_alumni_goal: 3,
-        monthly_industry_goal: 5,
-        monthly_recruiter_goal: 3
+        target_companies: [],
+        job_boards: [],
+        geographic_preferences: [],
       });
     } catch (error) {
       console.error('Error loading career goals:', error);
@@ -134,7 +132,7 @@ export function CareerGoalsPanel() {
     try {
       const goalData = {
         ...formData,
-        student_id: user.id
+        student_id: studentId
       };
 
       const { error } = goals

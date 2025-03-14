@@ -20,17 +20,19 @@ src/App.tsx
 src/hooks/*
 src/stores/*
 src/types/*
+src/lib/*
+src/services/*
 
+supabase/functions/*
+supabase_discarded_migrations/*
 
 src/pages/Login.tsx
 src/pages/SignUp.tsx
-
-
+src/pages/ForgotPassword.tsx
+src/pages/ResetPassword.tsx
 src/pages/StudentManagement.tsx
-src/pages/Dashboard.tsx
-src/pages/Progress.tsx
+src/pages/UserManagement.tsx
 src/pages/Profile.tsx
-
 
 src/components/AddUserModal.tsx
 src/components/ConfirmationModal.tsx
@@ -40,9 +42,35 @@ src/components/ImportUsersModal.tsx
 src/components/PasswordStrengthIndicator.tsx
 
 src/components/job-search/*
+src/components/performance/*
+
+
+
 src/components/ProtectedRoute.tsx
 
+src/components/AddUserModal.tsx
+src/components/BulkActionModal.tsx
+src/components/ConfirmationModal.tsx
+src/components/EditStudentModal.tsx
+src/components/EditUserModal.tsx
+src/components/ImportTaskModal.tsx
+src/components/ImportUserModal.tsx
 
+src/components/NotificationBell.tsx
+src/components/NotificationPanel.tsx
+src/components/PasswordStrengthIndicator.tsx
+src/components/SearchableSelect.tsx
+src/components/SubtaskForm.tsx
+src/components/SuggestiveSelect.tsx
+
+src/components/TaskBoard.tsx
+src/components/TaskForm.tsx
+src/components/TaskGroup.tsx
+src/components/TaskList.tsx
+src/components/TaskOverview.tsx
+src/components/TaskPanel.tsx
+src/components/Toast.tsx
+src/components/ToastContainer.tsx
 src/components/Layout.tsx
 
 

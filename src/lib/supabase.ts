@@ -718,7 +718,7 @@ export async function deleteTaskUpdate(updateId: string): Promise<void> {
 export async function fetchStudentPerformance(studentId: string, month?: string): Promise<StudentPerformance> {
   try {
     // Fetch student profile with performance data
-    const { data: student, error: studentError } = await supabaseAdmin
+    const { data: studentData, error: studentError } = await supabaseAdmin
       .from('students')
       .select(`
         *,
@@ -727,9 +727,10 @@ export async function fetchStudentPerformance(studentId: string, month?: string)
         mentor:profiles!students_mentor_id_fkey(id, full_name, email, role, avatar_url)
       `)
       .eq('id', studentId)
-      .single();
+      .maybeSingle();
 
     if (studentError) throw studentError;
+    if (!studentData) throw new Error('Student not found');
 
     // Fetch latest performance review
     let reviewQuery = supabase
@@ -739,39 +740,38 @@ export async function fetchStudentPerformance(studentId: string, month?: string)
 
     // If month is specified, filter by that month
     if (month) {
-      const startDate = new Date(month + '-01');
-      const endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 31, 23, 59, 59, 999);
+      const startDate = new Date(month + "-1");
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+
       reviewQuery = reviewQuery
-        .gte('review_date', startDate.toISOString())
-        .lte('review_date', endDate.toISOString());
+        .gte('review_date', startDate.toISOString().split('T')[0])
+        .lte('review_date', endDate.toISOString().split('T')[0]);
     }
 
-    const { data: latestReview, error: reviewError } = await reviewQuery
+    const { data: reviews, error: reviewError } = await reviewQuery
       .order('review_date', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
 
-    // Handle case where no review exists
-    if (reviewError && reviewError.code === 'PGRST116') {
-      // No review exists, continue with other data
-    } else if (reviewError) {
+    if (reviewError) {
       throw reviewError;
     }
+
+    const latestReview = reviews?.[0];
 
     // Fetch mock interviews
     let interviewsQuery = supabase
       .from('mock_interviews')
       .select('*')
       .eq('student_id', studentId);
-
+    
     if (month) {
-      const startDate = new Date(month + '-01');
+      const startDate = new Date(month + "-1");
       const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
       interviewsQuery = interviewsQuery
         .gte('interview_date', startDate.toISOString())
         .lte('interview_date', endDate.toISOString());
     }
-
+    
     const { data: mockInterviews, error: interviewsError } = await interviewsQuery
       .order('interview_date', { ascending: false });
 
@@ -784,7 +784,7 @@ export async function fetchStudentPerformance(studentId: string, month?: string)
       .eq('student_id', studentId);
 
     if (month) {
-      const startDate = new Date(month + '-01');
+      const startDate = new Date(month + "-1");
       const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
       officeHoursQuery = officeHoursQuery
         .gte('session_date', startDate.toISOString())
@@ -807,10 +807,10 @@ export async function fetchStudentPerformance(studentId: string, month?: string)
 
     return {
       student: {
-        ...student.profile,
+        ...studentData.profile,
       },
-      coach: student.coach,
-      mentor: student.mentor,
+      coach: studentData.coach,
+      mentor: studentData.mentor,
       latest_review: latestReview ? {
         id: latestReview.id,
         student_id: latestReview.student_id,
@@ -893,6 +893,61 @@ export async function createMockInterview(
 
   if (error) throw error;
   return data;
+}
+
+export async function updateMockInterview(
+  id: string,
+  updates: Partial<MockInterview>
+): Promise<void> {
+  const { error } = await supabase
+    .from('mock_interviews')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function deleteMockInterview(id: string): Promise<void> {
+  try {
+    console.log('Starting deletion process for mock interview:', id);
+    
+    // Delete the mock interview with admin privileges
+    const { error } = await supabaseAdmin
+      .from('mock_interviews')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting mock interview:', error);
+      throw error;
+    }
+
+    console.log('Successfully deleted mock interview:', id);
+  } catch (error) {
+    console.error('Error in deleteMockInterview:', error);
+    throw error;
+  }
+}
+
+export async function updateOfficeHoursRecord(
+  id: string,
+  updates: Partial<OfficeHoursRecord>
+): Promise<void> {
+  const { error } = await supabase
+    .from('office_hours')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function deleteOfficeHoursRecord(id: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('office_hours')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
 
 export async function createResumeVersion(

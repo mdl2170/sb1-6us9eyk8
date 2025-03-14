@@ -41,6 +41,9 @@ export function Layout() {
       { name: 'Reports', href: '/reports', icon: BarChart3, roles: ['admin', 'coach', 'mentor',] },
       { name: 'Performance', href: '/performance', icon: TrendingUp },
     ] : []),
+    ...(user?.role === 'admin' || user?.role === 'mentor' || user?.role === 'coach' ? [
+      { name: 'Performance', href: '/performance', icon: TrendingUp },
+    ] : []),
   ];
 
   return (

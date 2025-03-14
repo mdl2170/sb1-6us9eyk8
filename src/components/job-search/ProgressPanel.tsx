@@ -23,7 +23,11 @@ interface WeeklyProgress {
   };
 }
 
-export function ProgressPanel() {
+interface ProgressPanelProps {
+  studentId?: string;
+}
+
+export function ProgressPanel({ studentId }: ProgressPanelProps) {
   const { user } = useAuth();
   const { addToast } = useToastStore();
   const [metrics, setMetrics] = useState<ApplicationMetrics | null>(null);
@@ -46,18 +50,18 @@ export function ProgressPanel() {
     if (user?.id) {
       loadProgressData(true);
     }
-  }, [user?.id, dateRange]);
+  }, [studentId, dateRange]);
 
   async function loadProgressData(generateReviews = false) {
     try {
       setIsLoading(true);
-      if (!user?.id) return;
+      if (!studentId) return;
 
       // Calculate metrics directly
       const { data: applications } = await supabase
         .from('job_applications') 
         .select('status') 
-        .eq('student_id', user.id)
+        .eq('student_id', studentId)
         .gte('application_date', dateRange.start)
         .lte('application_date', dateRange.end);
 
@@ -92,14 +96,14 @@ export function ProgressPanel() {
       const { data: goals } = await supabase
         .from('career_goals')
         .select('weekly_application_goal, weekly_connection_goal')
-        .eq('student_id', user.id)
+        .eq('student_id', studentId)
         .single();
 
       // Get applications count
       const { count: applicationsCount } = await supabase
         .from('job_applications')
         .select('*', { count: 'exact', head: true })
-        .eq('student_id', user.id)
+        .eq('student_id', studentId)
         .gte('application_date', dateRange.start)
         .lte('application_date', dateRange.end);
 
@@ -107,7 +111,7 @@ export function ProgressPanel() {
       const { count: connectionsCount } = await supabase
         .from('networking_interactions')
         .select('*', { count: 'exact', head: true })
-        .eq('student_id', user.id)
+        .eq('student_id', studentId)
         .gte('interaction_date', dateRange.start)
         .lte('interaction_date', dateRange.end);
 
