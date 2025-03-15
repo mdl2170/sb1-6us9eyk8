@@ -104,7 +104,14 @@ export async function fetchTasks(): Promise<Task[]> {
   // Fetch main tasks
   const { data: mainTasks, error: mainTasksError } = await supabase
     .from('tasks')
-    .select('*')
+    .select(`
+      *,
+      created_by_profile:profiles!tasks_created_by_fkey (
+        id,
+        full_name,
+        email
+      )
+    `)
     .is('parent_id', null)
     .order('group_id', { ascending: true })
     .order('order', { ascending: true });
@@ -122,7 +129,14 @@ export async function fetchTasks(): Promise<Task[]> {
   // Fetch subtasks
   const { data: subtasks, error: subtasksError } = await supabase
     .from('tasks')
-    .select('*')
+    .select(`
+      *,
+      created_by_profile:profiles!tasks_created_by_fkey (
+        id,
+        full_name,
+        email
+      )
+    `)
     .not('parent_id', 'is', null)
     .order('parent_id', { ascending: true })
     .order('order', { ascending: true });
@@ -184,6 +198,7 @@ export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated
     ...rest,
     due_date: rest.due_date || null,
     created_by,
+    created_by,
     group_id: groupId,
     tags: rest.tags || [],
     parent_id: null,
@@ -198,6 +213,7 @@ export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated
 
   if (error) throw error;
 
+  
   // Schedule reminders if task has due date and assignee
   if (data.due_date && data.assignee) {
     const { error: reminderError } = await supabase
@@ -616,11 +632,23 @@ export async function createNotification(notification: {
   type: string;
   link?: string;
 }): Promise<void> {
+  // First, insert the notification
   const { error } = await supabase
     .from('notifications')
     .insert([notification]);
 
   if (error) throw error;
+  
+  // Then, broadcast the notification to all channels
+  const channel = supabase.channel(`notifications:${notification.user_id}`);
+  await channel.subscribe();
+  
+  // Send the notification through the channel
+  channel.send({
+    type: 'broadcast',
+    event: 'notification',
+    payload: notification
+  });
 }
 
 export async function createTaskNotification(
@@ -634,7 +662,7 @@ export async function createTaskNotification(
     title: `Task ${action}`,
     message: `Task "${taskTitle}" has been ${action.toLowerCase()}.`,
     type: 'task',
-    link: `/progress?task=${taskId}`,
+    link: `/task?task=${taskId}`,
   });
 }
 
@@ -682,6 +710,294 @@ export async function deleteTaskUpdate(updateId: string): Promise<void> {
     .from('task_updates')
     .delete()
     .eq('id', updateId);
+
+  if (error) throw error;
+}
+
+// Student Performance functions
+export async function fetchStudentPerformance(studentId: string, month?: string): Promise<StudentPerformance> {
+  try {
+    // Fetch student profile with performance data
+    const { data: studentData, error: studentError } = await supabaseAdmin
+      .from('students')
+      .select(`
+        *,
+        profile:profiles!students_id_fkey(*),
+        coach:profiles!students_coach_id_fkey(id, full_name, email, role, avatar_url),
+        mentor:profiles!students_mentor_id_fkey(id, full_name, email, role, avatar_url)
+      `)
+      .eq('id', studentId)
+      .maybeSingle();
+
+    if (studentError) throw studentError;
+    if (!studentData) throw new Error('Student not found');
+
+    // Fetch latest performance review
+    let reviewQuery = supabase
+      .from('performance_reviews')
+      .select('*')
+      .eq('student_id', studentId);
+
+    // If month is specified, filter by that month
+    if (month) {
+      const startDate = new Date(month + "-1");
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+
+      reviewQuery = reviewQuery
+        .gte('review_date', startDate.toISOString().split('T')[0])
+        .lte('review_date', endDate.toISOString().split('T')[0]);
+    }
+
+    const { data: reviews, error: reviewError } = await reviewQuery
+      .order('review_date', { ascending: false })
+      .limit(1);
+
+    if (reviewError) {
+      throw reviewError;
+    }
+
+    const latestReview = reviews?.[0];
+
+    // Fetch mock interviews
+    let interviewsQuery = supabase
+      .from('mock_interviews')
+      .select('*')
+      .eq('student_id', studentId);
+    
+    if (month) {
+      const startDate = new Date(month + "-1");
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+      interviewsQuery = interviewsQuery
+        .gte('interview_date', startDate.toISOString())
+        .lte('interview_date', endDate.toISOString());
+    }
+    
+    const { data: mockInterviews, error: interviewsError } = await interviewsQuery
+      .order('interview_date', { ascending: false });
+
+    if (interviewsError) throw interviewsError;
+
+    // Fetch office hours
+    let officeHoursQuery = supabase
+      .from('office_hours')
+      .select('*')
+      .eq('student_id', studentId);
+
+    if (month) {
+      const startDate = new Date(month + "-1");
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+      officeHoursQuery = officeHoursQuery
+        .gte('session_date', startDate.toISOString())
+        .lte('session_date', endDate.toISOString());
+    }
+
+    const { data: officeHours, error: officeHoursError } = await officeHoursQuery
+      .order('session_date', { ascending: false });
+
+    if (officeHoursError) throw officeHoursError;
+
+    // Fetch resume versions
+    const { data: resumeVersions, error: resumeError } = await supabase
+      .from('resume_versions')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('version_number', { ascending: false });
+
+    if (resumeError) throw resumeError;
+
+    return {
+      student: {
+        ...studentData.profile,
+      },
+      coach: studentData.coach,
+      mentor: studentData.mentor,
+      latest_review: latestReview ? {
+        id: latestReview.id,
+        student_id: latestReview.student_id,
+        coach_id: latestReview.coach_id,
+        review_date: latestReview.review_date,
+        attention_level: latestReview.attention_level,
+        performance_rating: latestReview.performance_rating,
+        overall_notes: latestReview.overall_notes,
+        resume_quality: latestReview.resume_quality || 0,
+        application_effectiveness: latestReview.application_effectiveness || 0,
+        behavioral_performance: latestReview.behavioral_performance || 0,
+        networking_capability: latestReview.networking_capability || 0,
+        technical_proficiency: latestReview.technical_proficiency || 0,
+        energy_level: latestReview.energy_level || 0,
+        indicator_notes: latestReview.indicator_notes || {},
+        created_at: latestReview.created_at,
+        updated_at: latestReview.updated_at
+      } : undefined,
+      mock_interviews: mockInterviews || [],
+      office_hours: officeHours || [],
+      resume_versions: resumeVersions || [],
+    };
+  } catch (error) {
+    console.error('Error fetching student performance:', error);
+    throw error;
+  }
+}
+
+export async function createPerformanceReview(
+  review: Omit<PerformanceReview, 'id' | 'created_at' | 'updated_at'>
+): Promise<PerformanceReview> {
+  try {
+    // Create performance review
+    const { data: reviewData, error: reviewError } = await supabase
+      .from('performance_reviews')
+      .insert([review])
+      .select()
+      .single();
+
+    if (reviewError) throw reviewError;
+
+    // Update student's attention level and performance rating
+    const { error: studentError } = await supabase
+      .from('students')
+      .update({
+        last_review_date: reviewData.review_date,
+      })
+      .eq('id', review.student_id);
+
+    if (studentError) throw studentError;
+
+    return reviewData;
+  } catch (error) {
+    console.error('Error creating performance review:', error);
+    throw error;
+  }
+}
+
+export async function createOfficeHoursRecord(
+  record: Omit<OfficeHoursRecord, 'id' | 'created_at' | 'updated_at'>
+): Promise<OfficeHoursRecord> {
+  const { data, error } = await supabase
+    .from('office_hours')
+    .insert([record])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function createMockInterview(
+  interview: Omit<MockInterview, 'id' | 'created_at' | 'updated_at'>
+): Promise<MockInterview> {
+  const { data, error } = await supabase
+    .from('mock_interviews')
+    .insert([interview])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateMockInterview(
+  id: string,
+  updates: Partial<MockInterview>
+): Promise<void> {
+  const { error } = await supabase
+    .from('mock_interviews')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function deleteMockInterview(id: string): Promise<void> {
+  try {
+    console.log('Starting deletion process for mock interview:', id);
+    
+    // Delete the mock interview with admin privileges
+    const { error } = await supabaseAdmin
+      .from('mock_interviews')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting mock interview:', error);
+      throw error;
+    }
+
+    console.log('Successfully deleted mock interview:', id);
+  } catch (error) {
+    console.error('Error in deleteMockInterview:', error);
+    throw error;
+  }
+}
+
+export async function updateOfficeHoursRecord(
+  id: string,
+  updates: Partial<OfficeHoursRecord>
+): Promise<void> {
+  const { error } = await supabase
+    .from('office_hours')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function deleteOfficeHoursRecord(id: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('office_hours')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function createResumeVersion(
+  resume: Omit<ResumeVersion, 'id' | 'created_at' | 'updated_at'>,
+  file: File
+): Promise<ResumeVersion> {
+  try {
+    // Upload resume file
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${resume.student_id}/${resume.version_number}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    // Get file URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('resumes')
+      .getPublicUrl(fileName);
+
+    // Create resume version record
+    const { data, error } = await supabase
+      .from('resume_versions')
+      .insert([{ ...resume, file_url: publicUrl }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error creating resume version:', error);
+    throw error;
+  }
+}
+
+export async function updateResumeStatus(
+  resumeId: string,
+  status: ResumeStatus,
+  feedback?: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('resume_versions')
+    .update({
+      status,
+      feedback,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', resumeId);
 
   if (error) throw error;
 }

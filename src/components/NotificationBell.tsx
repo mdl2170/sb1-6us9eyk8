@@ -18,29 +18,62 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load notifications
-    loadNotifications();
+    if (!user) return;
 
-    // Set up real-time subscription
-    const subscription = supabase
-      .channel('notifications')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user?.id}`,
-        },
-        (payload) => {
-          setNotifications(prev => [payload.new as Notification, ...prev]);
-          setUnreadCount(prev => prev + 1);
-        }
-      )
-      .subscribe();
+    const setupRealtimeSubscription = async () => {
+      try {
+        // Load initial notifications
+        await loadNotifications();
+
+        // Set up real-time subscription with retry logic
+        const channel = supabase.channel(`notifications:${user.id}`);
+        
+        const subscription = channel
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              const newNotification = payload.new as Notification;
+              setNotifications(prev => [newNotification, ...prev]);
+              setUnreadCount(prev => prev + 1);
+              
+              // Show browser notification if supported
+              if (Notification.permission === 'granted') {
+                new Notification(newNotification.title, {
+                  body: newNotification.message,
+                  icon: '/notification-icon.png'
+                });
+              }
+            }
+          )
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              setIsSubscribed(true);
+              console.log('Successfully subscribed to notifications');
+            }
+          });
+
+        return () => {
+          subscription.unsubscribe();
+          setIsSubscribed(false);
+        };
+      } catch (error) {
+        console.error('Error setting up notification subscription:', error);
+        // Retry subscription after 3 seconds
+        setTimeout(setupRealtimeSubscription, 3000);
+      }
+    };
+
+    setupRealtimeSubscription();
 
     // Handle clicks outside of dropdown
     const handleClickOutside = (event: MouseEvent) => {
@@ -52,7 +85,6 @@ export function NotificationBell() {
     document.addEventListener('mousedown', handleClickOutside);
 
     return () => {
-      subscription.unsubscribe();
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [user?.id]);
@@ -86,12 +118,16 @@ export function NotificationBell() {
 
       if (error) throw error;
 
+      // Update local state immediately
       setNotifications(prev =>
         prev.map(n =>
           n.id === notificationId ? { ...n, read: true } : n
         )
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+
+      // Refresh notifications to ensure sync
+      loadNotifications();
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -132,7 +168,9 @@ export function NotificationBell() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-gray-600 hover:text-gray-900 focus:outline-none"
+        className={`relative p-2 focus:outline-none transition-colors duration-200 ${
+          isSubscribed ? 'text-gray-600 hover:text-gray-900' : 'text-red-500 hover:text-red-600'
+        }`}
       >
         <Bell className="h-6 w-6" />
         {unreadCount > 0 && (

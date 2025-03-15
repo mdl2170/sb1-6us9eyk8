@@ -6,6 +6,10 @@ import { Plus, Search, Filter, ChevronDown, Upload } from 'lucide-react';
 import { ApplicationForm } from './ApplicationForm';
 import { ImportApplicationsModal } from './ImportApplicationsModal';
 
+interface ApplicationsPanelProps {
+  studentId?: string;
+}
+
 interface JobApplication {
   id: string;
   company_name: string;
@@ -16,7 +20,7 @@ interface JobApplication {
   next_follow_up: string | null;
 }
 
-export function ApplicationsPanel() {
+export function ApplicationsPanel({ studentId }: ApplicationsPanelProps) {
   const { user } = useAuth();
   const { addToast } = useToastStore();
   const [applications, setApplications] = useState<JobApplication[]>([]);
@@ -29,14 +33,14 @@ export function ApplicationsPanel() {
 
   useEffect(() => {
     loadApplications();
-  }, [user?.id]);
+  }, [studentId]);
 
   async function loadApplications() {
     try {
       const { data, error } = await supabase
         .from('job_applications')
         .select('*')
-        .eq('student_id', user?.id)
+        .eq('student_id', studentId)
         .order('application_date', { ascending: false });
 
       if (error) throw error;

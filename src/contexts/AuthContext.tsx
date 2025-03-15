@@ -19,14 +19,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        loadProfile(session.user.id);
-      } else {
+    let mounted = true;
+    
+    const initializeAuth = async () => {
+      try {
+        // Check active sessions and sets the user
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user && mounted) {
+          await loadProfile(session.user.id);
+        } else if (mounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
         setIsLoading(false);
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -39,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -64,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function signIn(email: string, password: string) {
     try {
       setIsLoading(true);
-      const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         'email': email,
         'password': password,
       })
@@ -78,12 +91,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profile.status !== 'active') {
         throw new Error('Your account is not active. Please contact support.');
       }
-
-      // Set the session in the client
-      await supabase.auth.setSession(data.session);
-
-      // Set the session in the client
-      await supabase.auth.setSession(data.session);
 
       setUser(profile);
       navigate('/dashboard');

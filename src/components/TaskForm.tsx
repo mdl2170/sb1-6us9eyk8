@@ -27,7 +27,8 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
   const [newTag, setNewTag] = useState('');
   const [assignableUsers, setAssignableUsers] = useState<{ value: string, label: string }[]>([]);
 
-  const retrievedDueDate = dueDate.split('T')[0];
+  const formattedDueDate = dueDate ? dueDate.split('T')[0] : '';
+
   
   useEffect(() => {
     const loadAssignableUsers = async () => {
@@ -92,11 +93,12 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log(dueDate);
+
+    
     onSubmit({
       title,
       description,
-      due_date: dueDate || undefined,
+      due_date: dueDate.split('T')[0] || undefined,
       priority,
       groupId,
       status: initialData?.status || 'pending',
@@ -208,7 +210,7 @@ export function TaskForm({ groups, initialData, onSubmit, onCancel }: TaskFormPr
                   <input
                     type="date"
                     id="dueDate"
-                    value={ retrievedDueDate }
+                    value={ formattedDueDate }
                     onChange={(e) => setDueDate(e.target.value)}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                   />

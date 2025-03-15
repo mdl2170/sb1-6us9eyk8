@@ -6,6 +6,10 @@ import { Plus, Search, Filter, ChevronDown, Calendar, Link, Mail, Phone, Upload 
 import { NetworkingForm } from './NetworkingForm';
 import { ImportNetworkingModal } from './ImportNetworkingModal';
 
+interface NetworkingPanelProps {
+  studentId?: string;
+}
+
 interface NetworkingInteraction {
   id: string;
   contact_name: string;
@@ -23,7 +27,7 @@ interface NetworkingInteraction {
   phone: string | null;
 }
 
-export function NetworkingPanel() {
+export function NetworkingPanel({ studentId }: NetworkingPanelProps) {
   const { user } = useAuth();
   const { addToast } = useToastStore();
   const [interactions, setInteractions] = useState<NetworkingInteraction[]>([]);
@@ -36,14 +40,14 @@ export function NetworkingPanel() {
 
   useEffect(() => {
     loadInteractions();
-  }, [user?.id]);
+  }, [studentId]);
 
   async function loadInteractions() {
     try {
       const { data, error } = await supabase
         .from('networking_interactions')
         .select('*')
-        .eq('student_id', user?.id)
+        .eq('student_id', studentId)
         .order('interaction_date', { ascending: false });
 
       if (error) throw error;

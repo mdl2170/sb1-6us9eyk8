@@ -14,7 +14,8 @@ import {
   Search,
   ChevronLeft,
   User,
-  LogOut
+  LogOut,
+  TrendingUp
 } from 'lucide-react';
 
 export function Layout() {
@@ -38,6 +39,10 @@ export function Layout() {
       { name: 'Users', href: '/users', icon: Users },
       { name: 'Students', href: '/students', icon: GraduationCap },
       { name: 'Reports', href: '/reports', icon: BarChart3, roles: ['admin', 'coach', 'mentor',] },
+      { name: 'Performance', href: '/performance', icon: TrendingUp },
+    ] : []),
+    ...(user?.role === 'admin' || user?.role === 'mentor' || user?.role === 'coach' ? [
+      { name: 'Performance', href: '/performance', icon: TrendingUp },
     ] : []),
   ];
 

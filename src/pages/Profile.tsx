@@ -13,6 +13,9 @@ export function Profile() {
   const [isLoading, setIsLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Add a unique key for localStorage
+  const FORM_STORAGE_KEY = `profile-form-${user?.id}`;
+
   const initialFormData = {
     full_name: '',
     email: '',
@@ -35,6 +38,28 @@ export function Profile() {
   };
 
   const [formData, setFormData] = useState(initialFormData);
+
+  // Load saved form data from localStorage when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      const savedFormData = localStorage.getItem(FORM_STORAGE_KEY);
+      if (savedFormData) {
+        setFormData(JSON.parse(savedFormData));
+      }
+    }
+  }, [isEditing, FORM_STORAGE_KEY]);
+
+  // Save form data to localStorage whenever it changes
+  useEffect(() => {
+    if (isEditing) {
+      localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(formData));
+    }
+  }, [formData, isEditing, FORM_STORAGE_KEY]);
+
+  // Clear localStorage when form is submitted or cancelled
+  const clearSavedForm = () => {
+    localStorage.removeItem(FORM_STORAGE_KEY);
+  };
 
   // Determine which fields to show based on role
   const visibleFields = useMemo(() => {
@@ -69,26 +94,35 @@ export function Profile() {
       setIsLoading(true);
       const profileData = await fetchProfile(user!.id);
       setProfile(profileData);
-      setFormData({
-        full_name: profileData.full_name,
-        email: profileData.email,
-        phone: profileData.phone || '',
-        program_type: profileData.program_type || '',
-        school: profileData.school || '',
-        major: profileData.major || '',
-        timezone: profileData.timezone || '',
-        linkedin_url: profileData.linkedin_url || '',
-        facebook_url: profileData.facebook_url || '',
-        student_folder_url: profileData.student_folder_url || '',
-        program_start_date: profileData.program_start_date || '',
-        expected_end_date: profileData.expected_end_date || '',
-        school_graduation_date: profileData.school_graduation_date || '',
-        target_role: profileData.target_role || '',
-        cohort: profileData.cohort || '',
-        job_search_status: profileData.job_search_status || '',
-        specialization: profileData.specialization || [],
-        expertise: profileData.expertise || [],
-      });
+      
+      // Initialize form data with profile data
+      const savedFormData = localStorage.getItem(FORM_STORAGE_KEY);
+      if (savedFormData) {
+        // Use saved form data if it exists
+        setFormData(JSON.parse(savedFormData));
+      } else {
+        // Otherwise use profile data
+        setFormData({
+          full_name: profileData.full_name || '',
+          email: profileData.email || '',
+          phone: profileData.phone || '',
+          program_type: profileData.program_type || '',
+          school: profileData.school || '',
+          major: profileData.major || '',
+          timezone: profileData.timezone || '',
+          linkedin_url: profileData.linkedin_url || '',
+          facebook_url: profileData.facebook_url || '',
+          student_folder_url: profileData.student_folder_url || '',
+          program_start_date: profileData.program_start_date || '',
+          expected_end_date: profileData.expected_end_date || '',
+          school_graduation_date: profileData.school_graduation_date || '',
+          target_role: profileData.target_role || '',
+          cohort: profileData.cohort || '',
+          job_search_status: profileData.job_search_status || '',
+          specialization: profileData.specialization || [],
+          expertise: profileData.expertise || [],
+        });
+      }
     } catch (error) {
       console.error('Error loading profile:', error);
       addToast('Failed to load profile', 'error');
@@ -138,11 +172,80 @@ export function Profile() {
       }
 
       setIsEditing(false);
+      clearSavedForm(); // Clear saved form data after successful submit
       loadProfile();
       addToast('Profile updated successfully', 'success');
     } catch (error) {
       console.error('Error updating profile:', error);
       addToast('Failed to update profile', 'error');
+    }
+  };
+
+  // Add beforeunload event handler to warn users before leaving
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isEditing) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isEditing]);
+
+  // Update the edit button click handler
+  const handleEditClick = () => {
+    // When entering edit mode, initialize form with current profile data
+    setFormData({
+      full_name: profile?.full_name || '',
+      email: profile?.email || '',
+      phone: profile?.phone || '',
+      program_type: profile?.program_type || '',
+      school: profile?.school || '',
+      major: profile?.major || '',
+      timezone: profile?.timezone || '',
+      linkedin_url: profile?.linkedin_url || '',
+      facebook_url: profile?.facebook_url || '',
+      student_folder_url: profile?.student_folder_url || '',
+      program_start_date: profile?.program_start_date || '',
+      expected_end_date: profile?.expected_end_date || '',
+      school_graduation_date: profile?.school_graduation_date || '',
+      target_role: profile?.target_role || '',
+      cohort: profile?.cohort || '',
+      job_search_status: profile?.job_search_status || '',
+      specialization: profile?.specialization || [],
+      expertise: profile?.expertise || [],
+    });
+    setIsEditing(true);
+  };
+
+  // Update the cancel handler
+  const handleCancel = () => {
+    if (window.confirm('Are you sure you want to cancel? All changes will be lost.')) {
+      setIsEditing(false);
+      clearSavedForm();
+      // Reset form to current profile data instead of initial empty state
+      setFormData({
+        full_name: profile?.full_name || '',
+        email: profile?.email || '',
+        phone: profile?.phone || '',
+        program_type: profile?.program_type || '',
+        school: profile?.school || '',
+        major: profile?.major || '',
+        timezone: profile?.timezone || '',
+        linkedin_url: profile?.linkedin_url || '',
+        facebook_url: profile?.facebook_url || '',
+        student_folder_url: profile?.student_folder_url || '',
+        program_start_date: profile?.program_start_date || '',
+        expected_end_date: profile?.expected_end_date || '',
+        school_graduation_date: profile?.school_graduation_date || '',
+        target_role: profile?.target_role || '',
+        cohort: profile?.cohort || '',
+        job_search_status: profile?.job_search_status || '',
+        specialization: profile?.specialization || [],
+        expertise: profile?.expertise || [],
+      });
     }
   };
 
@@ -205,7 +308,7 @@ export function Profile() {
             </div>
             {!isEditing && (
               <button
-                onClick={() => setIsEditing(true)}
+                onClick={handleEditClick}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
                 Edit Profile
@@ -397,7 +500,7 @@ export function Profile() {
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
+                  onClick={handleCancel}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -571,33 +674,47 @@ export function Profile() {
         </div>
 
         {/* Support Team Section - Only visible for students */}
-        {profile?.role === 'student' && (profile?.coach || profile?.mentor) && (
+        {profile?.role === 'student' && (
           <div className="border-t border-gray-200 px-6 py-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">Support Team</h2>
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              {profile.coach && (
-                <div className="flex items-center space-x-4">
-                  <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
-                    <User className="h-6 w-6 text-indigo-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{profile.coach.full_name}</p>
-                    <p className="text-sm text-gray-500">Coach</p>
-                  </div>
+              <div className="flex items-center space-x-4">
+                <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <User className="h-6 w-6 text-indigo-600" />
                 </div>
-              )}
+                <div>
+                  {profile.coach ? (
+                    <>
+                      <p className="text-sm font-medium text-gray-900">{profile.coach.full_name}</p>
+                      <p className="text-sm text-gray-500">Coach</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-gray-900">No coach assigned</p>
+                      <p className="text-sm text-gray-500">Coach</p>
+                    </>
+                  )}
+                </div>
+              </div>
 
-              {profile.mentor && (
-                <div className="flex items-center space-x-4">
-                  <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
-                    <User className="h-6 w-6 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{profile.mentor.full_name}</p>
-                    <p className="text-sm text-gray-500">Mentor</p>
-                  </div>
+              <div className="flex items-center space-x-4">
+                <div className="h-12 w-12 rounded-full bg-purple-100 flex items-center justify-center">
+                  <User className="h-6 w-6 text-purple-600" />
                 </div>
-              )}
+                <div>
+                  {profile.mentor ? (
+                    <>
+                      <p className="text-sm font-medium text-gray-900">{profile.mentor.full_name}</p>
+                      <p className="text-sm text-gray-500">Mentor</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-gray-900">No mentor assigned</p>
+                      <p className="text-sm text-gray-500">Mentor</p>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -15,6 +15,7 @@ import { UserManagement } from './pages/UserManagement';
 import { StudentManagement } from './pages/StudentManagement';
 import { ToastContainer } from './components/ToastContainer';
 import { JobSearch } from './pages/JobSearch';
+import { PerformanceReview } from './pages/PerformanceReview';
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
           <Route path="/users" element={<UserManagement />} />
           <Route path="/students" element={<StudentManagement />} />
           <Route path="/job-search" element={<JobSearch />} />
+          <Route path="/performance" element={<PerformanceReview />} />
         </Route>
       </Routes>
     </AuthProvider>

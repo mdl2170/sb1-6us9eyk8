@@ -209,27 +209,22 @@ function TaskRow({
             <div>
               <div className="flex items-center">
                 {!task.parent_id && (
-                  <div className="mr-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (task.subtasks?.length > 0) {
+                  <div className="mr-2 w-4">
+                    {task.subtasks?.length > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setIsExpanded(!isExpanded);
-                        }
-                      }}
-                      className={`text-gray-400 ${
-                        task.subtasks?.length > 0
-                          ? 'hover:text-gray-700 cursor-pointer'
-                          : 'opacity-50 cursor-default'
-                      }`}
-                      disabled={!task.subtasks?.length}
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4" />
-                      )}
-                    </button>
+                        }}
+                        className="text-gray-400 hover:text-gray-700 cursor-pointer"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className={`text-sm font-medium text-gray-900 ${task.parent_id ? 'ml-8' : ''}`}>
@@ -287,14 +282,6 @@ function TaskRow({
               {formatDate(task.due_date, isTaskOverdue(task))}
             </div>
           )}
-        </td>
-        <td className="px-6 py-4 w-[12%]">
-          <div className="flex items-center">
-            <Clock className="h-4 w-4 mr-1" />
-                {formatDate(task.created_at)}
-
-                
-          </div>
         </td>
         <td className="px-6 py-4 w-[12%]">
           <div className="flex items-center justify-between">
@@ -385,10 +372,6 @@ function TaskRow({
                   setShowSubtaskForm(false);
                 }}
                 onClose={() => setShowSubtaskForm(false)}
-                parentTask={{
-                  id: task.id,
-                  groupId: task.groupId
-                }}
               />
             </div>
           </td>
@@ -538,9 +521,6 @@ export function TaskBoard({
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                 Due Date
-              </th>
-              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
-                Created
               </th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">
                 Assignee

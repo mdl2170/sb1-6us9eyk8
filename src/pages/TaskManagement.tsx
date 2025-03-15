@@ -4,6 +4,7 @@ import { DndContext, closestCenter, DragEndEvent, KeyboardSensor, PointerSensor,
 import { supabase } from '../lib/supabase';
 import { arrayMove } from '@dnd-kit/sortable';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { useSelectedStudentStore } from '../stores/useSelectedStudentStore';
 import { duplicateTaskResources } from '../lib/supabase';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { useAuth } from '../hooks/useAuth';
@@ -27,7 +28,7 @@ import {
 
 export function TaskManagement() {
   const { user } = useAuth();
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const { selectedStudent, setSelectedStudent } = useSelectedStudentStore();
   const [students, setStudents] = useState<{ id: string; full_name: string }[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [groups, setGroups] = useState<TaskGroupType[]>([]);
@@ -36,20 +37,39 @@ export function TaskManagement() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { addToast } = useToastStore();
-  
+  const [isLoading, setIsLoading] = useState(true);
+ 
   // Load students for staff members
   useEffect(() => {
     if (user?.role !== 'student') {
       const loadStudents = async () => {
         try {
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('id, full_name')
-            .eq('role', 'student')
-            .order('full_name');
+          let query = supabase
+            .from('students')
+            .select(`
+              id,
+              profile:profiles!students_id_fkey (
+                id,
+                full_name
+              )
+            `)
+            .order('profile(full_name)');
+
+          // Filter by coach_id or mentor_id based on user role
+          if (user?.role === 'coach') {
+            query = query.eq('coach_id', user.id);
+          } else if (user?.role === 'mentor') {
+            query = query.eq('mentor_id', user.id);
+          }
+
+          const { data, error } = await query;
 
           if (error) throw error;
-          setStudents(data || []);
+
+          setStudents(data?.map(student => ({
+            id: student.profile.id,
+            full_name: student.profile.full_name
+          })) || []);
         } catch (err) {
           console.error('Error loading students:', err);
           addToast('Failed to load students', 'error');
@@ -60,30 +80,74 @@ export function TaskManagement() {
     }
   }, [user]);
 
+  // Load tasks data
+  useEffect(() => {
+    if (user?.role === 'student' || selectedStudent) {
+      loadData();
+    }
+  }, [user, selectedStudent]);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      const [tasksData, groupsData] = await Promise.all([
+        fetchTasks(),
+        fetchTaskGroups(
+          user?.role === 'student' ? user.id : selectedStudent
+        ),
+      ]);
+      setTasks(tasksData);
+      setGroups(groupsData);
+    } catch (err: any) {
+      console.error('Error loading data:', err);
+      addToast('Failed to load data', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Filter tasks based on role and selected student
   const filteredTasks = useMemo(() => {
     let filtered = tasks;
+    const query = searchQuery.toLowerCase().trim();
 
     if (user?.role === 'student') {
       filtered = tasks.filter(task => 
-        task.created_by === user.id || 
+        task.created_by === user.id ||
         task.assignee === user.full_name
       );
     } else if (selectedStudent) {
       const student = students.find(s => s.id === selectedStudent);
       if (student) {
         filtered = tasks.filter(task =>
-          task.created_by === selectedStudent ||
+          task.created_by === selectedStudent || 
           task.assignee === student.full_name
         );
       }
     }
 
-    return filtered.filter(task =>
-      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    if (query) {
+      filtered = filtered.filter(task => {
+        const matchesTitle = task.title.toLowerCase().includes(query);
+        const matchesDescription = task.description?.toLowerCase().includes(query) || false;
+        const matchesTags = task.tags?.some(tag => tag.toLowerCase().includes(query)) || false;
+        const matchesAssignee = task.assignee?.toLowerCase().includes(query) || false;
+        const matchesStatus = task.status.toLowerCase().includes(query);
+        
+        // Also search in subtasks
+        const matchesSubtasks = task.subtasks.some(subtask => 
+          subtask.title.toLowerCase().includes(query) ||
+          subtask.description?.toLowerCase().includes(query) ||
+          subtask.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+          subtask.assignee?.toLowerCase().includes(query) ||
+          subtask.status.toLowerCase().includes(query)
+        );
+
+        return matchesTitle || matchesDescription || matchesTags || matchesAssignee || matchesStatus || matchesSubtasks;
+      });
+    }
+
+    return filtered;
   }, [tasks, user, selectedStudent, students, searchQuery]);
 
   // Get assignable users based on role
@@ -136,10 +200,10 @@ export function TaskManagement() {
       // Add created_by field
       const taskWithCreator = {
         ...taskData,
-        created_by: user?.id
+        created_by: user?.id || ''
       };
 
-      const newTask = await createTask(taskData);
+      const newTask = await createTask(taskWithCreator);
       setTasks(prevTasks => [newTask, ...prevTasks]);
       addToast('Task created successfully', 'success');
     } catch (err) {
@@ -182,26 +246,6 @@ export function TaskManagement() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const [tasksData, groupsData] = await Promise.all([
-        fetchTasks(),
-        fetchTaskGroups(
-          user?.role === 'student' ? user.id : selectedStudent
-        ),
-      ]);
-      setTasks(tasksData);
-      setGroups(groupsData);
-    } catch (err) {
-      console.error('Error loading data:', err);
-      addToast('Failed to load data', 'error');
-    }
-  };
 
   const handleGroupCreate = async () => {
     try {
@@ -458,132 +502,156 @@ export function TaskManagement() {
   };
 
   return (
-    <div>
-      <div className="mb-8">
-        <div className="flex justify-between items-center gap-4">
-          <h1 className="text-2xl font-semibold text-gray-900">Task</h1>
-          {user?.role !== 'student' && (
-            <SearchableSelect
-              options={students.map(s => ({ value: s.id, label: s.full_name }))}
-              value={selectedStudent || ''}
-              onChange={setSelectedStudent}
-              placeholder="Select student..."
-              className="w-64"
-            />
-          )}
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search tasks..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-              <Search className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
+    <div className="min-h-screen bg-gray-50 -mt-8 -mx-8 -mb-8">
+      <div className="max-w-7xl mx-auto p-8">
+        <h1 className="text-2xl font-semibold text-gray-900">Task Management</h1>
+        <p className="mt-2 text-sm text-gray-600">
+          Manage and track tasks for better productivity
+        </p>
+
+        {user?.role !== 'student' && (
+          <div className="bg-white shadow rounded-lg mt-8">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-lg font-medium text-gray-900">Please select a student</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Choose a student from the dropdown below to view and manage their tasks
+              </p>
             </div>
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <Upload className="h-5 w-5 mr-2" />
-              Import Tasks
-            </button>
-            <button
-              onClick={handleGroupCreate}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Add Group
-            </button>
-            <button
-              onClick={() => setShowTaskForm(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Add Task
-            </button>
+            <div className="p-6">
+              <div className="flex items-center gap-4">
+                <SearchableSelect
+                  options={students.map(s => ({ value: s.id, label: s.full_name }))}
+                  value={selectedStudent || ''}
+                  onChange={setSelectedStudent}
+                  placeholder="Select student..."
+                  className="w-48"
+                />
+                {selectedStudent && (
+                  <>
+                    <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search tasks..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-48 px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                  <Search className="absolute right-3 top-2.5 h-5 w-5 text-gray-400" />
+                    </div>
+                    <button
+                      onClick={() => setShowImportModal(true)}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 whitespace-nowrap"
+                    >
+                      <Upload className="h-5 w-5 mr-2" />
+                      Import Tasks
+                    </button>
+                    <button
+                      onClick={handleGroupCreate}
+                      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 whitespace-nowrap"
+                    >
+                      <Plus className="h-5 w-5 mr-2" />
+                      Add Group
+                    </button>
+                    <button
+                      onClick={() => setShowTaskForm(true)}
+                      className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 whitespace-nowrap"
+                    >
+                      <Plus className="h-5 w-5 mr-2" />
+                      Add Task
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : (user?.role === 'student' || selectedStudent) ? (
+          <>
+            <TaskOverview tasks={filteredTasks} />
+
+            <DndContext
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              sensors={sensors}
+            >
+              <SortableContext
+                items={groups.map(group => group.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-6">
+                  {groups.map((group) => (
+                    <TaskGroup
+                      key={group.id}
+                      group={group}
+                      tasks={filteredTasks.filter((task) => task.groupId === group.id)}
+                      onTaskUpdate={handleTaskUpdate}
+                      onTaskMove={handleTaskMove}
+                      onTaskDelete={handleTaskDelete}
+                      onTaskDuplicate={handleTaskDuplicate}
+                      onTaskEdit={setEditingTask}
+                      onTasksReorder={(reorderedTasks) => setTasks(reorderedTasks)}
+                      onAddSubtask={handleAddSubtask}
+                      onToggleSubtask={(taskId, subtaskId) => {
+                        handleTaskUpdate(subtaskId, {
+                          status: 'completed',
+                        });
+                      }}
+                      onGroupDelete={handleGroupDelete}
+                      onGroupUpdate={handleGroupUpdate}
+                      onAddTask={() => setShowTaskForm(true)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            {(showTaskForm || editingTask) && (
+              <TaskForm
+                groups={groups}
+                initialData={editingTask}
+                onSubmit={(taskData) => {
+                  if (editingTask) {
+                    handleTaskUpdate(editingTask.id, taskData);
+                  } else {
+                    handleTaskCreate(taskData);
+                  }
+                  setShowTaskForm(false);
+                  setEditingTask(null);
+                }}
+                onCancel={() => {
+                  setShowTaskForm(false);
+                  setEditingTask(null);
+                }}
+              />
+            )}
+
+            {showImportModal && (
+              <ImportTaskModal
+                onClose={() => setShowImportModal(false)}
+                onImport={async (tasksToImport) => {
+                  try {
+                    const createdTasks = await Promise.all(
+                      tasksToImport.map(task => createTask(task))
+                    );
+                    setTasks(prevTasks => [...createdTasks, ...prevTasks]);
+                    addToast('Tasks imported successfully', 'success');
+                    setShowImportModal(false);
+                  } catch (err) {
+                    console.error('Error importing tasks:', err);
+                    addToast('Failed to import tasks', 'error');
+                  }
+                }}
+                groups={groups}
+              />
+            )}
+          </>
+        ) : null}
       </div>
-
-      <TaskOverview tasks={filteredTasks} />
-
-      <DndContext
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-        sensors={sensors}
-      >
-        <SortableContext
-          items={groups.map(group => group.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="space-y-6">
-            {groups.map((group) => (
-              <TaskGroup
-                key={group.id}
-                group={group}
-              tasks={filteredTasks.filter((task) => task.groupId === group.id)}
-              onTaskUpdate={handleTaskUpdate}
-              onTaskMove={handleTaskMove}
-              onTaskDelete={handleTaskDelete}
-              onTaskDuplicate={handleTaskDuplicate}
-              onTaskEdit={setEditingTask}
-              onTasksReorder={(reorderedTasks) => setTasks(reorderedTasks)}
-              onAddSubtask={handleAddSubtask}
-              onToggleSubtask={(taskId, subtaskId) => {
-                handleTaskUpdate(subtaskId, {
-                  status: 'completed',
-                });
-              }}
-              onGroupDelete={handleGroupDelete}
-              onGroupUpdate={handleGroupUpdate}
-              onAddTask={() => setShowTaskForm(true)}
-            />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-
-      {(showTaskForm || editingTask) && (
-        <TaskForm
-          groups={groups}
-          initialData={editingTask}
-          onSubmit={(taskData) => {
-            if (editingTask) {
-              handleTaskUpdate(editingTask.id, taskData);
-            } else {
-              handleTaskCreate(taskData);
-            }
-            setShowTaskForm(false);
-            setEditingTask(null);
-          }}
-          onCancel={() => {
-            setShowTaskForm(false);
-            setEditingTask(null);
-          }}
-        />
-      )}
-
-      {showImportModal && (
-        <ImportTaskModal
-          onClose={() => setShowImportModal(false)}
-          onImport={async (tasksToImport) => {
-            try {
-              const createdTasks = await Promise.all(
-                tasksToImport.map(task => createTask(task))
-              );
-              setTasks(prevTasks => [...createdTasks, ...prevTasks]);
-              addToast('Tasks imported successfully', 'success');
-              setShowImportModal(false);
-            } catch (err) {
-              console.error('Error importing tasks:', err);
-              addToast('Failed to import tasks', 'error');
-            }
-          }}
-          groups={groups}
-        />
-      )}
     </div>
   );
 }
