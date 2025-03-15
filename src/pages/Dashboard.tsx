@@ -617,7 +617,7 @@ export function Dashboard() {
               Monitor your students' performance and progress
             </p>
 
-            <div className="bg-white shadow rounded-lg mt-8">
+            <div className="mt-8">
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-8">
                 <div className="bg-white overflow-hidden shadow rounded-lg">
                   <div className="p-5">
